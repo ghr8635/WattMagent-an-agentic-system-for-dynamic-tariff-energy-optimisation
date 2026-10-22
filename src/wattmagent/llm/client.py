@@ -90,16 +90,26 @@ def _estimate_tokens(messages: list[Message], max_tokens: int) -> int:
     return chars // 3 + max_tokens  # deliberately pessimistic
 
 
+def _as_int(value: object) -> int:
+    return value if isinstance(value, int) and not isinstance(value, bool) else 0
+
+
 def _parse(model: str, data: dict[str, object]) -> Completion:
-    try:
-        choices = data["choices"]
-        text = str(choices[0]["message"]["content"])  # type: ignore[index]
-    except (KeyError, IndexError, TypeError) as e:
-        raise ModelUnavailable(f"{model}: malformed response") from e
-    usage = data.get("usage") or {}
-    pt = int(usage.get("prompt_tokens", 0))  # type: ignore[union-attr]
-    ct = int(usage.get("completion_tokens", 0))  # type: ignore[union-attr]
-    return Completion(text=text, model=model, prompt_tokens=pt, completion_tokens=ct)
+    """Validate the provider's JSON structurally; anything unexpected means 'try next model'."""
+    choices = data.get("choices")
+    first = choices[0] if isinstance(choices, list) and choices else None
+    message = first.get("message") if isinstance(first, dict) else None
+    content = message.get("content") if isinstance(message, dict) else None
+    if not isinstance(content, str):
+        raise ModelUnavailable(f"{model}: malformed response")
+    usage = data.get("usage")
+    counts = usage if isinstance(usage, dict) else {}
+    return Completion(
+        text=content,
+        model=model,
+        prompt_tokens=_as_int(counts.get("prompt_tokens")),
+        completion_tokens=_as_int(counts.get("completion_tokens")),
+    )
 
 
 class LLMClient:

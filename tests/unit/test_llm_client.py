@@ -121,3 +121,13 @@ def test_budget_rolls_over_at_midnight() -> None:
     assert b.remaining == 0
     today[0] += timedelta(days=1)
     assert b.remaining == 100
+
+
+def test_null_content_and_odd_usage_are_handled() -> None:
+    null_content = {"choices": [{"message": {"content": None}}]}
+    odd_usage = {"choices": [{"message": {"content": "ok"}}], "usage": "nope"}
+    t, c = make_client({"a": null_content, "b": odd_usage}, ["a", "b"])
+    comp = c.complete(MSG)
+    assert comp.text == "ok" and comp.model == "b"
+    assert comp.prompt_tokens == 0 and comp.completion_tokens == 0
+    assert t.calls == ["a", "b"]
