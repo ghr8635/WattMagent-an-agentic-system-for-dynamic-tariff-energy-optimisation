@@ -4,7 +4,7 @@ WattMagent plans when a household should use electricity, so flexible loads (EV
 charging first, then heat pump, battery, appliances) run in cheap hours. It sits
 on top of existing dynamic tariffs and home automation instead of replacing them.
 
-**Design principle:** a deterministic optimiser makes the scheduling decisions.
+**Design principle:** A deterministic optimiser makes the scheduling decisions.
 The LLM agent handles what optimisers are bad at: turning requests into
 constraints, replanning when conditions change, explaining plans, and enforcing a
 safety check before anything executes.
