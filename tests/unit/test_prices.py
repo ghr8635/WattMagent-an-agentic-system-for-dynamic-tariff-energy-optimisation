@@ -36,9 +36,7 @@ def test_synthetic_rejects_bad_days() -> None:
 
 
 def test_csv_hourly_converts_units() -> None:
-    p = write_csv(
-        "timestamp,price_eur_mwh\n2025-01-01T00:00:00,100\n2025-01-01T01:00:00,50\n"
-    )
+    p = write_csv("timestamp,price_eur_mwh\n2025-01-01T00:00:00,100\n2025-01-01T01:00:00,50\n")
     pts = load_csv(p)
     assert [round(x.eur_per_kwh, 6) for x in pts] == [0.1, 0.05]
 

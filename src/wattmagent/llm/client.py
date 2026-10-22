@@ -62,8 +62,12 @@ class HttpxTransport:
         try:
             r = self._client.post(
                 "/chat/completions",
-                json={"model": model, "messages": messages, "max_tokens": max_tokens,
-                      "temperature": 0.0},
+                json={
+                    "model": model,
+                    "messages": messages,
+                    "max_tokens": max_tokens,
+                    "temperature": 0.0,
+                },
             )
         except httpx.TimeoutException as e:
             raise ModelUnavailable(f"{model}: timeout") from e
@@ -123,8 +127,11 @@ class LLMClient:
             if self._cache and (hit := self._cache.get(key)):
                 usage.cached_calls += 1
                 return Completion(
-                    text=str(hit["text"]), model=model, prompt_tokens=0,
-                    completion_tokens=0, cached=True,
+                    text=str(hit["text"]),
+                    model=model,
+                    prompt_tokens=0,
+                    completion_tokens=0,
+                    cached=True,
                 )
             self._budget.check(_estimate_tokens(messages, self._max_tokens))
             try:

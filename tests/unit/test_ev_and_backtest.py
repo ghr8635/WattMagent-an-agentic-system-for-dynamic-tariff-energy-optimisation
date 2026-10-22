@@ -54,8 +54,9 @@ def test_baselines_deliver_exact_energy_and_respect_limits() -> None:
 
 
 def test_cheapest_hours_picks_cheapest_slots() -> None:
-    spec = EVSpec(max_charge_kw=10.0, efficiency=1.0, arrival_soc=0.0, target_soc=0.2,
-                  capacity_kwh=100.0)  # needs 20 kWh = two full hours
+    spec = EVSpec(
+        max_charge_kw=10.0, efficiency=1.0, arrival_soc=0.0, target_soc=0.2, capacity_kwh=100.0
+    )  # needs 20 kWh = two full hours
     sched = cheapest_hours([5.0, 1.0, 9.0, 2.0, 7.0], spec)
     assert [i for i, kw in enumerate(sched) if kw > 0] == [1, 3]
 
@@ -85,8 +86,15 @@ def test_infeasible_window_is_reported_not_hidden() -> None:
 
 
 def test_billing_uses_actual_prices_not_the_planners_view() -> None:
-    spec = EVSpec(max_charge_kw=10.0, efficiency=1.0, arrival_soc=0.0, target_soc=0.1,
-                  capacity_kwh=100.0, plug_in_hour=0, depart_hour=3)  # 10 kWh, 3 slots
+    spec = EVSpec(
+        max_charge_kw=10.0,
+        efficiency=1.0,
+        arrival_soc=0.0,
+        target_soc=0.1,
+        capacity_kwh=100.0,
+        plug_in_hour=0,
+        depart_hour=3,
+    )  # 10 kWh, 3 slots
     window = [PricePoint(datetime(2025, 1, 1, h), p) for h, p in enumerate([1.0, 2.0, 3.0])]
     # The planner is told slot 2 is cheapest, but slot 0 is truly cheapest.
     lying_view = lambda actual: [9.0, 9.0, 0.0]  # noqa: E731
