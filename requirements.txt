@@ -1,0 +1,6 @@
+# Runtime dependencies for WattMagent (same as pyproject.toml).
+pydantic>=2.7
+pydantic-settings>=2.3
+httpx>=0.27
+fastapi>=0.111
+uvicorn[standard]>=0.30

@@ -1,0 +1,62 @@
+[project]
+name = "wattmagent"
+version = "0.1.0"
+description = "WattMagent: an agentic system for dynamic-tariff energy optimisation"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "pydantic>=2.7",
+    "pydantic-settings>=2.3",
+    "httpx>=0.27",
+    "fastapi>=0.111",
+    "uvicorn[standard]>=0.30",
+]
+
+[project.optional-dependencies]
+# Added when the weeks that need them start (optimiser, forecasting, agent graph):
+#   opt  -> highspy / scipy      (week 2-3)
+#   ml   -> lightgbm, pandas      (forecasting)
+#   agent -> langgraph            (week 4-5)
+dev = [
+    "pytest>=8",
+    "pytest-cov>=5",
+    "ruff>=0.5",
+    "mypy>=1.10",
+    "pre-commit>=3.7",
+    "bandit>=1.7",
+    "pip-audit>=2.7",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/wattmagent"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "S"]
+ignore = ["S101"]  # asserts are fine in tests
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+files = [
+    "src/wattmagent/core",
+    "src/wattmagent/llm",
+    "src/wattmagent/data",
+    "src/wattmagent/devices",
+    "src/wattmagent/planning",
+    "src/wattmagent/backtest",
+]
+plugins = ["pydantic.mypy"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# Gate starts modest and gets raised as the code base grows.
+addopts = "-q --cov=wattmagent --cov-report=term-missing --cov-fail-under=70"
