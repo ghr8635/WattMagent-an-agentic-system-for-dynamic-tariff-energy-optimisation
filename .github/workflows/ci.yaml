@@ -20,6 +20,7 @@ jobs:
       - uses: astral-sh/setup-uv@v3
         with:
           enable-cache: true
+          cache-dependency-glob: pyproject.toml  # no uv.lock committed yet
       - run: uv python install 3.12
       - run: uv sync --extra dev
       - name: Lint and format
