@@ -56,7 +56,9 @@ def test_fixed_component_and_vat_formula() -> None:
 
 
 def test_percent_of_spot_component() -> None:
-    text = BASE + f"""
+    text = (
+        BASE
+        + f"""
 [[components]]
 name = "Margin"
 kind = "percent_of_spot"
@@ -64,6 +66,7 @@ percent = 10.0
 source = "{URL}"
 retrieved_on = 2026-10-01
 """
+    )
     t = parse(text)
     assert abs(t.all_in_eur_per_kwh(0.20, 0) - (0.20 + 0.05 + 0.02) * 1.19) < 1e-12
 
@@ -73,7 +76,9 @@ def test_negative_spot_with_fixed_fees_can_stay_positive() -> None:
     assert t.all_in_eur_per_kwh(-0.02, 3) > 0  # fees outweigh a mildly negative spot price
 
 
-TOU = BASE + f"""
+TOU = (
+    BASE
+    + f"""
 [[components]]
 name = "Time-variable grid fee"
 kind = "time_of_use"
@@ -85,6 +90,7 @@ periods = [
   {{ from_hour = 22, to_hour = 24, ct_per_kwh = 2.0 }},
 ]
 """
+)
 
 
 def test_time_of_use_follows_local_clock_across_dst() -> None:
@@ -114,7 +120,7 @@ def test_time_of_use_gaps_and_overlaps_are_rejected() -> None:
 def test_missing_source_or_date_is_rejected() -> None:
     component_tail = f'source = "{URL}"\nretrieved_on = 2026-10-01\n'
     assert component_tail in BASE
-    assert rejects(BASE.replace(component_tail, 'retrieved_on = 2026-10-01\n'))  # no source
+    assert rejects(BASE.replace(component_tail, "retrieved_on = 2026-10-01\n"))  # no source
     assert rejects(BASE.replace(component_tail, f'source = "{URL}"\n'))  # no date
     assert rejects(BASE.replace(f'vat_source = "{URL}"\n', ""))  # no VAT source
     assert rejects(BASE.replace("vat_retrieved_on = 2026-10-01\n", ""))  # no VAT date

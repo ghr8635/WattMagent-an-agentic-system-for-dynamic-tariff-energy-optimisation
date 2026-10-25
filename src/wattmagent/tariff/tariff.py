@@ -163,7 +163,7 @@ def _check_periods(what: str, periods: list[tuple[int, int, float]]) -> None:
     ordered = sorted(periods)
     if not ordered or ordered[0][0] != 0 or ordered[-1][1] != 24:
         raise TariffError(f"{what}: periods must cover 0..24 exactly")
-    for (a0, a1, _), (b0, _b1, _) in zip(ordered, ordered[1:], strict=False):
+    for (_a0, a1, _), (b0, _b1, _) in zip(ordered, ordered[1:], strict=False):
         if a1 != b0:
             raise TariffError(f"{what}: gap or overlap between hour {a1} and {b0}")
     for start, end, _ in ordered:
