@@ -122,3 +122,56 @@ def test_gapped_series_is_rejected() -> None:
         raise AssertionError("expected ValueError")
     except ValueError:
         pass
+
+
+def hourly_utc(start: datetime, hours: int, price: float = 0.1) -> list[PricePoint]:
+    return [PricePoint(start + timedelta(hours=i), price) for i in range(hours)]
+
+
+def test_dst_nights_have_12_and_14_hour_windows_in_local_time() -> None:
+    from datetime import UTC
+    from zoneinfo import ZoneInfo
+
+    berlin = ZoneInfo("Europe/Berlin")
+    spec = EVSpec()  # plug in 18:00 local, depart 07:00 local
+
+    # Clocks go forward on 2024-03-31: the night of 30th->31st is one hour shorter.
+    spring = hourly_utc(datetime(2024, 3, 29, 0, tzinfo=UTC), 24 * 4)
+    lengths = {
+        prices_start.astimezone(berlin).date().isoformat(): s.stop - s.start
+        for s in window_slices(spring, spec, berlin)
+        for prices_start in [spring[s.start].start]
+    }
+    assert lengths["2024-03-29"] == 13
+    assert lengths["2024-03-30"] == 12  # 18:00 CET -> 07:00 CEST
+
+    # Clocks go back on 2024-10-27: the night of 26th->27th is one hour longer.
+    autumn = hourly_utc(datetime(2024, 10, 25, 0, tzinfo=UTC), 24 * 4)
+    lengths = {
+        spec_start.astimezone(berlin).date().isoformat(): s.stop - s.start
+        for s in window_slices(autumn, spec, berlin)
+        for spec_start in [autumn[s.start].start]
+    }
+    assert lengths["2024-10-25"] == 13
+    assert lengths["2024-10-26"] == 14  # 18:00 CEST -> 07:00 CET
+
+
+def test_aware_series_without_tz_uses_utc_hours() -> None:
+    from datetime import UTC
+
+    prices = hourly_utc(datetime(2024, 6, 1, 0, tzinfo=UTC), 24 * 3)
+    spec = EVSpec()
+    utc_starts = {prices[s.start].start.hour for s in window_slices(prices, spec)}
+    assert utc_starts == {18}
+
+
+def test_backtest_runs_with_local_time_windows_on_dst_data() -> None:
+    from datetime import UTC
+    from zoneinfo import ZoneInfo
+
+    prices = [
+        PricePoint(p.start, 0.30 if p.start.hour in (17, 18, 19) else 0.10)
+        for p in hourly_utc(datetime(2024, 10, 24, 0, tzinfo=UTC), 24 * 6)
+    ]
+    res = run_backtest(prices, EVSpec(), BASELINES, tz=ZoneInfo("Europe/Berlin"))
+    assert all(r.days_target_met == r.days for r in res)

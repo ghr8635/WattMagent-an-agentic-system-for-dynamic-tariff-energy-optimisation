@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, tzinfo
 
 from wattmagent.data.prices import PricePoint
 from wattmagent.devices.ev import EVSession, EVSpec
@@ -41,16 +41,37 @@ def _validate_hourly(prices: Sequence[PricePoint]) -> None:
             raise ValueError(f"series is not gap-free hourly at {prev.start}")
 
 
-def window_slices(prices: Sequence[PricePoint], spec: EVSpec) -> Iterator[slice]:
-    """One slice per plug-in session, starting at each ``plug_in_hour``."""
-    first = next((i for i, p in enumerate(prices) if p.start.hour == spec.plug_in_hour), None)
-    if first is None:
-        return
-    n = spec.window_hours
-    i = first
-    while i + n <= len(prices):
-        yield slice(i, i + n)
-        i += 24
+def _local_hour(p: PricePoint, tz: tzinfo | None) -> int:
+    return (p.start.astimezone(tz) if tz is not None else p.start).hour
+
+
+def window_slices(
+    prices: Sequence[PricePoint], spec: EVSpec, tz: tzinfo | None = None
+) -> Iterator[slice]:
+    """One slice per plug-in session: from ``plug_in_hour`` to the next ``depart_hour``.
+
+    With ``tz`` (and timezone-aware prices) the hours are local clock hours, so on
+    daylight-saving nights a window is 12 or 14 hours long instead of 13. Without
+    ``tz`` the hours are read from the timestamps as they are. Incomplete windows at
+    the end of the series are dropped.
+    """
+    n = len(prices)
+    last_slot_hour = (spec.depart_hour - 1) % 24
+    i = 0
+    while i < n:
+        if _local_hour(prices[i], tz) != spec.plug_in_hour:
+            i += 1
+            continue
+        j = i + 1
+        while j < n and _local_hour(prices[j], tz) != spec.depart_hour:
+            j += 1
+        if j >= n:
+            # Data ends before the departure slot exists; keep the window only if it is complete.
+            if _local_hour(prices[n - 1], tz) == last_slot_hour:
+                yield slice(i, n)
+            return
+        yield slice(i, j)
+        i = j
 
 
 def run_day(
@@ -75,9 +96,10 @@ def run_backtest(
     spec: EVSpec,
     planners: Mapping[str, Planner],
     view: View | None = None,
+    tz: tzinfo | None = None,
 ) -> list[StrategySummary]:
     _validate_hourly(prices)
-    slices = list(window_slices(prices, spec))
+    slices = list(window_slices(prices, spec, tz))
     if not slices:
         raise ValueError("price series too short for a single charging window")
     out: list[StrategySummary] = []
@@ -99,13 +121,15 @@ def run_backtest(
 
 def format_summary(results: Sequence[StrategySummary], baseline: str) -> str:
     base = next((r for r in results if r.name == baseline), None)
-    lines = [f"{'strategy':<34}{'days':>6}{'EUR/day':>10}{'vs base':>10}{'target met':>12}"]
+    head = f"{'strategy':<34}{'days':>6}{'EUR/day':>10}{'vs base':>10}{'saved/day':>11}"
+    lines = [head + f"{'target met':>14}"]
     for r in results:
-        delta = ""
+        delta = saved = ""
         if base and base.total_cost_eur != 0 and r is not base:
             delta = f"{(r.total_cost_eur / base.total_cost_eur - 1) * 100:+.1f}%"
+            saved = f"{base.mean_cost_per_day_eur - r.mean_cost_per_day_eur:.3f}"
         lines.append(
-            f"{r.name:<34}{r.days:>6}{r.mean_cost_per_day_eur:>10.3f}{delta:>10}"
-            f"{r.days_target_met:>7}/{r.days:<4}"
+            f"{r.name:<34}{r.days:>6}{r.mean_cost_per_day_eur:>10.3f}{delta:>10}{saved:>11}"
+            f"{r.days_target_met:>9}/{r.days:<4}"
         )
     return "\n".join(lines)

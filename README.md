@@ -4,7 +4,7 @@ WattMagent plans when a household should use electricity, so flexible loads (EV
 charging first, then heat pump, battery, appliances) run in cheap hours. It sits
 on top of existing dynamic tariffs and home automation instead of replacing them.
 
-**Design principle:** A deterministic optimiser makes the scheduling decisions.
+**Design principle:** a deterministic optimiser makes the scheduling decisions.
 The LLM agent handles what optimisers are bad at: turning requests into
 constraints, replanning when conditions change, explaining plans, and enforcing a
 safety check before anything executes.
@@ -14,14 +14,17 @@ safety check before anything executes.
 | Area | State |
 |---|---|
 | Price data: seeded synthetic generator, CSV loader (EUR/MWh, sub-hourly resampled to hourly) | done, tested |
+| SMARD export converter (local time to UTC, DST-safe, fails loudly on bad data) | done; validated on a real SMARD export (24,119 hourly rows, Jan 2024 to Oct 2026) |
+| Tariff model: sourced components, VAT, time-of-use fees, provenance checks | done, tested; shipped example is illustrative only |
 | EV simulator (charger limit, losses, capacity) | done, tested |
 | Baseline planners: charge-immediately, cheapest-hours (hindsight bound) | done, tested |
-| Backtest harness (billing always uses actual prices) and CLI | done, tested |
+| Backtest harness (billing always uses actual prices; plug-in/departure in local time) and CLI | done, tested |
 | LLM client: HF Inference Providers, model fallback, daily token budget, cache | done, tested |
 | Real market data ingestion, forecasting | not started |
 | MILP optimiser, battery / heat pump models | not started |
 | LangGraph agent, verifier, replanning | not started |
-| API (health check only), Docker, CI/CD | scaffold, CI not yet run |
+| CI (lint, types, tests, security, image scan) | green on GitHub Actions |
+| API (health check only), Docker deployment | scaffold only |
 
 No savings figure is claimed. Results from `--synthetic` are labelled SYNTHETIC
 and only exercise the code; they say nothing about real households.
@@ -32,12 +35,16 @@ and only exercise the code; they say nothing about real households.
 uv sync --extra dev
 uv run pytest
 uv run python -m wattmagent.backtest --synthetic --days 60 --seed 0
-uv run python -m wattmagent.backtest --csv data/prices.csv   # real data, see docs/data.md
+uv run python -m wattmagent.data.smard data/raw_smard_prices.csv data/prices_hourly_utc.csv
+uv run python -m wattmagent.backtest --csv data/prices_hourly_utc.csv   # see docs/data.md
 ```
+
+## Data credit
+Price data: Bundesnetzagentur | SMARD.de, licensed CC BY 4.0.
 
 ## Rules
 - Every number in this README comes from a script in this repo.
 - External calls sit behind interfaces; unit tests use fakes and need no network.
 - Simulated results are always labelled as simulated.
 
-See `docs/architecture.md` and `docs/data.md`.
+See `docs/architecture.md`, `docs/data.md`, `docs/tariff.md` and `docs/production-checklist.md`.

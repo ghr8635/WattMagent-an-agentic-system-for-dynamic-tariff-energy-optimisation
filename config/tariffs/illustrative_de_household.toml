@@ -1,0 +1,51 @@
+# ILLUSTRATIVE German household dynamic tariff. NOT a real tariff: euro figures
+# produced with this file are for demonstration only.
+#
+# To model your own tariff: copy this file, set `illustrative = false`, and replace
+# every value with the numbers from YOUR supplier's price sheet and YOUR grid
+# operator's Preisblatt. Each component then needs a real `source` (a URL, or
+# "document:<file name>") and a `retrieved_on` date, otherwise loading fails.
+#
+# Kinds: fixed_per_kwh | percent_of_spot | time_of_use (local clock hours, [from, to)).
+
+name = "Illustrative DE household, spot pass-through"
+illustrative = true
+vat_percent = 19.0
+vat_source = "ILLUSTRATIVE: standard German VAT rate, verify before real use"
+vat_retrieved_on = 2026-10-22
+
+[[components]]
+name = "Electricity tax (Stromsteuer)"
+kind = "fixed_per_kwh"
+ct_per_kwh = 2.05
+source = "https://www.stromauskunft.de/energielexikon/stromsteuer/"
+retrieved_on = 2026-10-22
+note = "Secondary source: 20.50 EUR/MWh, unchanged since 2003. Verify against the law."
+
+[[components]]
+name = "Concession fee (Konzessionsabgabe)"
+kind = "fixed_per_kwh"
+ct_per_kwh = 1.67
+source = "ILLUSTRATIVE: nationwide average, 2025 figure from stromauskunft.de"
+retrieved_on = 2026-10-22
+
+[[components]]
+name = "Levies (KWKG 0.28 + offshore 0.82 + par. 19 StromNEV 1.56)"
+kind = "fixed_per_kwh"
+ct_per_kwh = 2.66
+source = "ILLUSTRATIVE: 2025 figures from stromauskunft.de, 2026 values not checked"
+retrieved_on = 2026-10-22
+
+[[components]]
+name = "Grid fee (Netzentgelt), flat"
+kind = "fixed_per_kwh"
+ct_per_kwh = 10.96
+source = "ILLUSTRATIVE: 2025 national average; real value depends on your grid operator"
+retrieved_on = 2026-10-22
+
+[[components]]
+name = "Supplier margin"
+kind = "fixed_per_kwh"
+ct_per_kwh = 2.0
+source = "ILLUSTRATIVE: placeholder, not researched"
+retrieved_on = 2026-10-22

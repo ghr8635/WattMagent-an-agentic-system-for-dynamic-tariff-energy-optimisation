@@ -6,6 +6,7 @@
 |---|---|---|
 | `data` | Price series: types, synthetic generator, CSV loader | done |
 | `devices` | Physics of each device; the simulator is the source of truth | EV done |
+| `tariff` | Spot price to all-in household price; every component sourced and dated | done |
 | `planning` | Planners: (prices seen, device spec) -> kW schedule | baselines done |
 | `backtest` | Replay a price series; bill schedules on *actual* prices | done |
 | `llm` | HF Inference Providers client, fallback chain, budget, cache | done |
