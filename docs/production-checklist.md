@@ -14,11 +14,14 @@ real customers or devices.
       tariff files (missing or stale sources, implausible values)
 - [x] Time handled in local time with daylight-saving nights tested (12 h and 14 h windows)
 - [x] Results labelled by provenance: synthetic, illustrative tariff, spot-only vs all-in
+- [x] Optimiser verified against the physics simulator (planned cost equals simulated bill + wear)
+      on random and negative-price days; infeasible requests reported with a reason
+- [x] Linter version pinned (`ruff~=0.16.9`) so local runs and CI agree
 
 ## To do
 ### Safety and reliability
 - [ ] Deterministic fallback plan when the LLM, price feed or API is unavailable
-- [ ] Plan verifier: hard rules checked before any plan is accepted (target reached,
+- [ ] Plan verifier (independent of the optimiser): hard rules checked before any plan is accepted (target reached,
       power limits, departure time), with an audit log of every decision
 - [ ] Data freshness check: stale or missing prices trigger the fallback
 - [ ] Idempotent actions: repeating a request never double-books a device

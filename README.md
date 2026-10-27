@@ -16,12 +16,13 @@ safety check before anything executes.
 | Price data: seeded synthetic generator, CSV loader (EUR/MWh, sub-hourly resampled to hourly) | done, tested |
 | SMARD export converter (local time to UTC, DST-safe, fails loudly on bad data) | done; validated on a real SMARD export (24,119 hourly rows, Jan 2024 to Oct 2026) |
 | Tariff model: sourced components, VAT, time-of-use fees, provenance checks | done, tested; shipped example is illustrative only |
-| EV simulator (charger limit, losses, capacity) | done, tested |
+| EV and home-battery simulators (power limits, losses, capacity, reserve) | done, tested |
 | Baseline planners: charge-immediately, cheapest-hours (hindsight bound) | done, tested |
 | Backtest harness (billing always uses actual prices; plug-in/departure in local time) and CLI | done, tested |
 | LLM client: HF Inference Providers, model fallback, daily token budget, cache | done, tested |
-| Real market data ingestion, forecasting | not started |
-| MILP optimiser, battery / heat pump models | not started |
+| Live market data ingestion, forecasting | not started |
+| MILP optimiser: EV + battery over one planning day, whole-household backtest | done, tested; results not yet measured on real data |
+| Heat pump model, solar | not started |
 | LangGraph agent, verifier, replanning | not started |
 | CI (lint, types, tests, security, image scan) | green on GitHub Actions |
 | API (health check only), Docker deployment | scaffold only |
@@ -37,6 +38,8 @@ uv run pytest
 uv run python -m wattmagent.backtest --synthetic --days 60 --seed 0
 uv run python -m wattmagent.data.smard data/raw_smard_prices.csv data/prices_hourly_utc.csv
 uv run python -m wattmagent.backtest --csv data/prices_hourly_utc.csv   # see docs/data.md
+uv run python -m wattmagent.backtest --csv data/prices_hourly_utc.csv --household \
+    --tariff config/tariffs/illustrative_de_household.toml   # EV + battery, see docs/optimiser.md
 ```
 
 ## Data credit
@@ -47,4 +50,4 @@ Price data: Bundesnetzagentur | SMARD.de, licensed CC BY 4.0.
 - External calls sit behind interfaces; unit tests use fakes and need no network.
 - Simulated results are always labelled as simulated.
 
-See `docs/architecture.md`, `docs/data.md`, `docs/tariff.md` and `docs/production-checklist.md`.
+See `docs/architecture.md`, `docs/optimiser.md`, `docs/data.md`, `docs/tariff.md` and `docs/production-checklist.md`.
