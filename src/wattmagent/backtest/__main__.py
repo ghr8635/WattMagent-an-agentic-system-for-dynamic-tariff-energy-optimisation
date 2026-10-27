@@ -7,8 +7,15 @@ from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+from wattmagent.backtest.household import (
+    Scenario,
+    default_planners,
+    format_household_summary,
+    run_household_backtest,
+)
 from wattmagent.backtest.runner import format_summary, run_backtest
 from wattmagent.data.prices import load_csv, synthetic_prices
+from wattmagent.devices.battery import BatterySpec
 from wattmagent.devices.ev import EVSpec
 from wattmagent.planning.baselines import BASELINES
 from wattmagent.tariff.tariff import apply_tariff, load_tariff
@@ -33,6 +40,22 @@ def main() -> None:
     )
     p.add_argument("--target-soc", type=float, default=0.8)
     p.add_argument("--arrival-soc", type=float, default=0.3)
+    p.add_argument(
+        "--household",
+        action="store_true",
+        help="whole-day household backtest (EV + battery + base load) with the MILP optimiser",
+    )
+    p.add_argument("--battery-kwh", type=float, default=10.0, help="household mode; 0 = no battery")
+    p.add_argument("--battery-kw", type=float, default=5.0, help="household mode")
+    p.add_argument(
+        "--battery-wear",
+        type=float,
+        default=0.03,
+        help="household mode: assumed wear cost in EUR per kWh delivered (an assumption)",
+    )
+    p.add_argument(
+        "--load-kwh", type=float, default=9.0, help="household mode: SYNTHETIC base load per day"
+    )
     args = p.parse_args()
 
     if args.csv:
@@ -55,9 +78,31 @@ def main() -> None:
     else:
         basis = "spot (wholesale) energy price only: no grid fees, taxes or margin"
 
-    results = run_backtest(prices, spec, BASELINES, tz=tz)
     clock = f"local time ({args.tz})" if tz else "as stored in the timestamps (naive)"
     print(f"# {label}\n# {spec}\n# plug-in/departure hours: {clock}\n# cost basis: {basis}")
+
+    if args.household:
+        battery = (
+            BatterySpec(
+                capacity_kwh=args.battery_kwh,
+                max_power_kw=args.battery_kw,
+                wear_eur_per_kwh=args.battery_wear,
+            )
+            if args.battery_kwh > 0
+            else None
+        )
+        scenario = Scenario(spec, battery, args.load_kwh)
+        print(f"# battery: {battery or 'none'}")
+        print(
+            f"# SYNTHETIC base load {args.load_kwh:g} kWh/day, known to the planner; next-day "
+            "prices assumed known at plug-in; battery wear is an assumption (net = bill + wear)"
+        )
+        print(banner)
+        hh = run_household_backtest(prices, scenario, default_planners(battery is not None), tz=tz)
+        print(format_household_summary(hh, baseline="ev_immediately"))
+        return
+
+    results = run_backtest(prices, spec, BASELINES, tz=tz)
     print(banner)
     print(format_summary(results, baseline="charge_immediately"))
 

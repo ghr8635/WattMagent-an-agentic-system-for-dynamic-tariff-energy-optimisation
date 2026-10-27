@@ -11,17 +11,18 @@ dependencies = [
     "fastapi>=0.111",
     "uvicorn[standard]>=0.30",
     "tzdata>=2024.1",  # time zone database; Windows has none built in
+    "numpy>=1.26",
+    "scipy>=1.11",  # HiGHS mixed-integer solver for the optimiser
 ]
 
 [project.optional-dependencies]
-# Added when the weeks that need them start (optimiser, forecasting, agent graph):
-#   opt  -> highspy / scipy      (week 2-3)
+# Added when the steps that need them start (forecasting, agent graph):
 #   ml   -> lightgbm, pandas      (forecasting)
-#   agent -> langgraph            (week 4-5)
+#   agent -> langgraph            (agent)
 dev = [
     "pytest>=8",
     "pytest-cov>=5",
-    "ruff>=0.5",
+    "ruff~=0.16.9",  # pinned: local and CI must lint with the same major.minor
     "mypy>=1.10",
     "pre-commit>=3.7",
     "bandit>=1.7",
@@ -53,10 +54,15 @@ files = [
     "src/wattmagent/data",
     "src/wattmagent/devices",
     "src/wattmagent/planning",
+    "src/wattmagent/optimiser",
     "src/wattmagent/tariff",
     "src/wattmagent/backtest",
 ]
 plugins = ["pydantic.mypy"]
+
+[[tool.mypy.overrides]]
+module = ["scipy", "scipy.*"]
+ignore_missing_imports = true  # scipy ships no type information
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
