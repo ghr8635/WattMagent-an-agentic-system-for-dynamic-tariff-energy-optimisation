@@ -55,6 +55,7 @@ files = [
     "src/wattmagent/devices",
     "src/wattmagent/planning",
     "src/wattmagent/optimiser",
+    "src/wattmagent/safety",
     "src/wattmagent/tariff",
     "src/wattmagent/backtest",
 ]

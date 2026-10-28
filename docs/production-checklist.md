@@ -20,10 +20,12 @@ real customers or devices.
 
 ## To do
 ### Safety and reliability
-- [ ] Deterministic fallback plan when the LLM, price feed or API is unavailable
-- [ ] Plan verifier (independent of the optimiser): hard rules checked before any plan is accepted (target reached,
-      power limits, departure time), with an audit log of every decision
-- [ ] Data freshness check: stale or missing prices trigger the fallback
+- [ ] Deterministic fallback plan when the LLM or API is unavailable (done for optimiser failure,
+      verifier rejection and stale prices; LLM and API cases arrive with the agent and API)
+- [x] Plan verifier (independent of the optimiser): target, power limits, plug-in hours, executability,
+      battery end state, cost vs baseline; attacked by tests with deliberately broken plans
+- [x] Audit log: one structured record per decision (JSON Lines), no personal data
+- [x] Data freshness check: stale, missing or implausible prices trigger the fallback (tested)
 - [ ] Idempotent actions: repeating a request never double-books a device
 
 ### API and operations

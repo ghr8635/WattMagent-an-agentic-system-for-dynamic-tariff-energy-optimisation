@@ -9,6 +9,7 @@
 | `tariff` | Spot price to all-in household price; every component sourced and dated | done |
 | `planning` | Planners: (prices seen, load, device specs) -> kW schedules; plan status | EV baselines, household rule planners done |
 | `optimiser` | MILP (HiGHS via SciPy): EV + battery, one planning day | done |
+| `safety` | Verifier, price-freshness check, fallback plan, audit log; the only path to an executable plan | done |
 | `backtest` | Replay a price series; bill schedules on *actual* prices (EV-only and whole-household) | done |
 | `llm` | HF Inference Providers client, fallback chain, budget, cache | done |
 | `graph` | LangGraph agent: parse, plan, verify, execute, monitor, replan | planned |
@@ -23,8 +24,9 @@
    Moving to the native resolution is a later, explicit change.
 4. **Fail loudly on bad data.** Gaps, duplicate hours and partial hours raise.
 5. **Infeasible requests are reported**, not silently "best effort": the plan has status `infeasible`, no schedule, and says what is reachable. The backtest counts those days and runs a rule-based fallback.
-6. **The optimiser's cost must equal the simulator's bill.** Tests compare the two on random and negative-price days, which catches model/physics mismatches.
-7. **SciPy/HiGHS is a core dependency**, not an optional extra: the optimiser is the product's core, and an extra would complicate CI and the image.
+6. **Nothing is executed unverified.** `plan_with_safety` is the single entry point: fresh prices, optimiser, independent verifier, else a verified fallback, else `PlanRejected`. One audit record per call. See `docs/safety.md`.
+7. **The optimiser's cost must equal the simulator's bill.** Tests compare the two on random and negative-price days, which catches model/physics mismatches.
+8. **SciPy/HiGHS is a core dependency**, not an optional extra: the optimiser is the product's core, and an extra would complicate CI and the image.
 
 ## Known limitations
 - Hourly resolution only. Native 15-minute resolution is a later, explicit change.

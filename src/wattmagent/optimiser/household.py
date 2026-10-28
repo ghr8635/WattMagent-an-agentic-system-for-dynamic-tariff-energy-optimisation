@@ -129,7 +129,7 @@ def plan_household(inputs: HouseholdInputs) -> HouseholdPlan:
         ],
         bounds=Bounds(lb, ub),
         integrality=integrality,
-        options={"time_limit": _TIME_LIMIT_S},
+        options={"time_limit": _TIME_LIMIT_S, "mip_rel_gap": 1e-6},
     )
     if res.status == 2:  # solver proves infeasibility the pre-check could not see
         return HouseholdPlan(PlanStatus.INFEASIBLE, message="no feasible schedule exists")

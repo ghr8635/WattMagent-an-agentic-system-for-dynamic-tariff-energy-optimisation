@@ -22,8 +22,9 @@ safety check before anything executes.
 | LLM client: HF Inference Providers, model fallback, daily token budget, cache | done, tested |
 | Live market data ingestion, forecasting | not started |
 | MILP optimiser: EV + battery over one planning day, whole-household backtest | done, tested; results not yet measured on real data |
+| Safety layer: independent plan verifier, price-freshness check, verified fallback, audit log | done, tested |
 | Heat pump model, solar | not started |
-| LangGraph agent, verifier, replanning | not started |
+| LangGraph agent, replanning | not started |
 | CI (lint, types, tests, security, image scan) | green on GitHub Actions |
 | API (health check only), Docker deployment | scaffold only |
 
@@ -50,4 +51,4 @@ Price data: Bundesnetzagentur | SMARD.de, licensed CC BY 4.0.
 - External calls sit behind interfaces; unit tests use fakes and need no network.
 - Simulated results are always labelled as simulated.
 
-See `docs/architecture.md`, `docs/optimiser.md`, `docs/data.md`, `docs/tariff.md` and `docs/production-checklist.md`.
+See `docs/architecture.md`, `docs/optimiser.md`, `docs/safety.md`, `docs/data.md`, `docs/tariff.md` and `docs/production-checklist.md`.
