@@ -21,14 +21,15 @@ safety check before anything executes.
 | Backtest harness (billing always uses actual prices; plug-in/departure in local time) and CLI | done, tested |
 | LLM client: HF Inference Providers, model fallback, daily token budget, cache | done, tested |
 | Live market data ingestion, forecasting | not started |
-| MILP optimiser: EV + battery over one planning day, whole-household backtest | done, tested; results not yet measured on real data |
+| MILP optimiser: EV + battery over one planning day, whole-household backtest | done, tested; backtested on real prices, see docs/results.md (not household savings) |
 | Safety layer: independent plan verifier, price-freshness check, verified fallback, audit log | done, tested |
 | Heat pump model, solar | not started |
 | LangGraph agent, replanning | not started |
 | CI (lint, types, tests, security, image scan) | green on GitHub Actions |
 | API (health check only), Docker deployment | scaffold only |
 
-No savings figure is claimed. Results from `--synthetic` are labelled SYNTHETIC
+No household savings figure is claimed. Measured backtest results on real prices, with every
+assumption stated, are in `docs/results.md`. Results from `--synthetic` are labelled SYNTHETIC
 and only exercise the code; they say nothing about real households.
 
 ## Run
@@ -51,4 +52,4 @@ Price data: Bundesnetzagentur | SMARD.de, licensed CC BY 4.0.
 - External calls sit behind interfaces; unit tests use fakes and need no network.
 - Simulated results are always labelled as simulated.
 
-See `docs/architecture.md`, `docs/optimiser.md`, `docs/safety.md`, `docs/data.md`, `docs/tariff.md` and `docs/production-checklist.md`.
+See `docs/architecture.md`, `docs/optimiser.md`, `docs/safety.md`, `docs/results.md`, `docs/data.md`, `docs/tariff.md` and `docs/production-checklist.md`.
