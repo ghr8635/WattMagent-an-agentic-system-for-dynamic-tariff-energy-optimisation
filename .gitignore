@@ -9,3 +9,5 @@ __pycache__/
 .coverage
 dist/
 data/*.csv
+
+*.zip
