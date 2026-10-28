@@ -33,6 +33,8 @@ from wattmagent.planning.household import (
     ev_cheapest_hours,
     ev_immediately,
 )
+from wattmagent.safety.audit import AuditLog
+from wattmagent.safety.pipeline import plan_with_safety
 
 View = Callable[[Sequence[float]], Sequence[float]]
 
@@ -164,19 +166,38 @@ def run_household_backtest(
     return out
 
 
-def default_planners(with_battery: bool) -> dict[str, HouseholdPlanner]:
-    """The strategies compared by the CLI, in display order. The first is the baseline."""
+def _verified(planner: HouseholdPlanner, audit: AuditLog) -> HouseholdPlanner:
+    """Run ``planner`` through the safety pipeline (verify, fall back, audit)."""
+
+    def run(inputs: HouseholdInputs) -> HouseholdPlan:
+        return plan_with_safety(inputs, planner=planner, audit=audit).plan
+
+    return run
+
+
+def default_planners(
+    with_battery: bool, audit: AuditLog | None = None
+) -> dict[str, HouseholdPlanner]:
+    """The strategies compared by the CLI, in display order. The first is the baseline.
+
+    With ``audit`` the optimiser strategies run through the safety pipeline, so every
+    plan is verified and every decision is logged.
+    """
 
     def milp_ev_only(inputs: HouseholdInputs) -> HouseholdPlan:
         return plan_household(replace(inputs, battery=None))
 
+    ev_only: HouseholdPlanner = milp_ev_only
+    full: HouseholdPlanner = plan_household
+    if audit is not None:
+        ev_only, full = _verified(ev_only, audit), _verified(full, audit)
     planners: dict[str, HouseholdPlanner] = {
         "ev_immediately": ev_immediately,
         "ev_cheapest_hours": ev_cheapest_hours,
-        "milp_ev_only": milp_ev_only,
+        "milp_ev_only": ev_only,
     }
     if with_battery:
-        planners["milp_ev_and_battery"] = plan_household
+        planners["milp_ev_and_battery"] = full
     return planners
 
 

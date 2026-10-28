@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import contextlib
 import io
+import json
 import sys
 from datetime import UTC, datetime
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -19,6 +21,7 @@ from wattmagent.backtest.household import (
 from wattmagent.data.prices import PricePoint, synthetic_prices
 from wattmagent.devices.battery import BatterySpec
 from wattmagent.devices.ev import EVSpec
+from wattmagent.safety.audit import InMemoryAuditLog
 
 BERLIN = ZoneInfo("Europe/Berlin")
 EV = EVSpec()
@@ -114,3 +117,22 @@ def test_cli_household_mode_is_labelled() -> None:
 def test_cli_household_without_battery_has_no_battery_strategy() -> None:
     out = run_cli("--synthetic", "--days", "8", "--household", "--battery-kwh", "0")
     assert "milp_ev_only" in out and "milp_ev_and_battery" not in out
+
+
+def test_cli_household_reports_safety_and_writes_the_audit_log(tmp_path: Path) -> None:
+    log = tmp_path / "audit.jsonl"
+    out = run_cli("--synthetic", "--days", "6", "--household", "--audit-log", str(log))
+    assert "# safety:" in out and "0 fallbacks" in out
+    lines = log.read_text(encoding="utf-8").splitlines()
+    assert lines and all(json.loads(line)["verifier"]["passed"] for line in lines)
+
+
+def test_verified_planners_give_the_same_costs_as_unverified_ones() -> None:
+    p = prices(15)
+    scenario = Scenario(EV, BatterySpec())
+    plain = run_household_backtest(p, scenario, default_planners(True), tz=BERLIN)
+    log = InMemoryAuditLog()
+    safe = run_household_backtest(p, scenario, default_planners(True, log), tz=BERLIN)
+    for a, b in zip(plain, safe, strict=True):
+        assert a.mean_net_eur == pytest.approx(b.mean_net_eur, abs=1e-9)
+    assert log.entries and all(e["decision"] == "optimised" for e in log.entries)

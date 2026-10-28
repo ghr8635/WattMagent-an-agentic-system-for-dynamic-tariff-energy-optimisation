@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+from collections import Counter
 from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -18,7 +19,16 @@ from wattmagent.data.prices import load_csv, synthetic_prices
 from wattmagent.devices.battery import BatterySpec
 from wattmagent.devices.ev import EVSpec
 from wattmagent.planning.baselines import BASELINES
+from wattmagent.safety.audit import InMemoryAuditLog, JsonlAuditLog
 from wattmagent.tariff.tariff import apply_tariff, load_tariff
+
+
+def _safety_line(audit: InMemoryAuditLog) -> str:
+    total = len(audit.entries)
+    fallbacks = [e for e in audit.entries if e["decision"] == "fallback"]
+    reasons = Counter(r.split(":")[0] for e in fallbacks for r in e["reasons"])
+    detail = ", ".join(f"{k}={v}" for k, v in sorted(reasons.items())) or "none"
+    return f"# safety: {total} optimiser plans verified, {len(fallbacks)} fallbacks ({detail})"
 
 
 def main() -> None:
@@ -52,6 +62,9 @@ def main() -> None:
         type=float,
         default=0.03,
         help="household mode: assumed wear cost in EUR per kWh delivered (an assumption)",
+    )
+    p.add_argument(
+        "--audit-log", type=Path, help="household mode: write one JSON line per decision here"
     )
     p.add_argument(
         "--load-kwh", type=float, default=9.0, help="household mode: SYNTHETIC base load per day"
@@ -98,8 +111,16 @@ def main() -> None:
             "prices assumed known at plug-in; battery wear is an assumption (net = bill + wear)"
         )
         print(banner)
-        hh = run_household_backtest(prices, scenario, default_planners(battery is not None), tz=tz)
+        audit = InMemoryAuditLog()
+        planners = default_planners(battery is not None, audit)
+        hh = run_household_backtest(prices, scenario, planners, tz=tz)
         print(format_household_summary(hh, baseline="ev_immediately"))
+        print(_safety_line(audit))
+        if args.audit_log:
+            sink = JsonlAuditLog(args.audit_log)
+            for entry in audit.entries:
+                sink.record(entry)
+            print(f"# audit log: {len(audit.entries)} decisions written to {args.audit_log}")
         return
 
     results = run_backtest(prices, spec, BASELINES, tz=tz)
