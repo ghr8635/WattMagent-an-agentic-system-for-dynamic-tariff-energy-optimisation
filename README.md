@@ -9,7 +9,7 @@ The LLM agent handles what optimisers are bad at: turning requests into
 constraints, replanning when conditions change, explaining plans, and enforcing a
 safety check before anything executes.
 
-## Status (honest)
+## Status
 
 | Area | State |
 |---|---|
