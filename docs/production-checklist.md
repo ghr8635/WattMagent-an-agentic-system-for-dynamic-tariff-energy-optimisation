@@ -38,7 +38,8 @@ real customers or devices.
 - [ ] Runbook, backup and restore of state, alerting plan
 
 ### Quality gates
-- [ ] Agent evaluation set in CI with thresholds that fail the build on regressions
+- [x] Evaluation set in CI with thresholds for the request parser (30 labelled cases; regression guard only)
+- [ ] Evaluation of the real model parser and explanations (needs the Hugging Face run)
 - [ ] Coverage gate raised as the code base grows (currently 70%)
 
 ### Privacy
