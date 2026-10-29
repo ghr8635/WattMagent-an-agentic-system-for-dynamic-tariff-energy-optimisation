@@ -12,7 +12,7 @@
 | `safety` | Verifier, price-freshness check, fallback plan, audit log; the only path to an executable plan | done |
 | `backtest` | Replay a price series; bill schedules on *actual* prices (EV-only and whole-household) | done |
 | `llm` | HF Inference Providers client, fallback chain, budget, cache | done |
-| `graph` | LangGraph agent: parse, plan, verify, execute, monitor, replan | planned |
+| `graph` | Agent: parse request, validate, plan (via `safety`), explain; LangGraph or built-in runner | done (no replanning yet) |
 | `api` | FastAPI: auth, rate limiting, streaming | health check only |
 
 ## Key decisions
@@ -26,7 +26,8 @@
 5. **Infeasible requests are reported**, not silently "best effort": the plan has status `infeasible`, no schedule, and says what is reachable. The backtest counts those days and runs a rule-based fallback.
 6. **Nothing is executed unverified.** `plan_with_safety` is the single entry point: fresh prices, optimiser, independent verifier, else a verified fallback, else `PlanRejected`. One audit record per call. See `docs/safety.md`.
 7. **The optimiser's cost must equal the simulator's bill.** Tests compare the two on random and negative-price days, which catches model/physics mismatches.
-8. **SciPy/HiGHS is a core dependency**, not an optional extra: the optimiser is the product's core, and an extra would complicate CI and the image.
+8. **The model proposes, code disposes.** Its output is grounded in the user's text, validated, and never decides hours or safety. See `docs/agent.md`.
+9. **SciPy/HiGHS is a core dependency**, not an optional extra: the optimiser is the product's core, and an extra would complicate CI and the image.
 
 ## Known limitations
 - Hourly resolution only. Native 15-minute resolution is a later, explicit change.

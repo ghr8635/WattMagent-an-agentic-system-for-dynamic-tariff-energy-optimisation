@@ -13,12 +13,12 @@ dependencies = [
     "tzdata>=2024.1",  # time zone database; Windows has none built in
     "numpy>=1.26",
     "scipy>=1.11",  # HiGHS mixed-integer solver for the optimiser
+    "langgraph>=0.2",  # agent orchestration
 ]
 
 [project.optional-dependencies]
 # Added when the steps that need them start (forecasting, agent graph):
 #   ml   -> lightgbm, pandas      (forecasting)
-#   agent -> langgraph            (agent)
 dev = [
     "pytest>=8",
     "pytest-cov>=5",
@@ -56,6 +56,7 @@ files = [
     "src/wattmagent/planning",
     "src/wattmagent/optimiser",
     "src/wattmagent/safety",
+    "src/wattmagent/graph",
     "src/wattmagent/tariff",
     "src/wattmagent/backtest",
 ]
@@ -64,6 +65,12 @@ plugins = ["pydantic.mypy"]
 [[tool.mypy.overrides]]
 module = ["scipy", "scipy.*"]
 ignore_missing_imports = true  # scipy ships no type information
+
+[[tool.mypy.overrides]]
+# The thin LangGraph adapter is not strictly type-checked: its generics are awkward to
+# annotate. It is covered by a parity test against the plain runner instead.
+module = ["wattmagent.graph.langgraph_app"]
+ignore_errors = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

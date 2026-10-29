@@ -14,7 +14,7 @@ from wattmagent.core.errors import (
 from wattmagent.core.types import Usage
 from wattmagent.llm.budget import TokenBudget
 from wattmagent.llm.cache import DiskCache
-from wattmagent.llm.client import LLMClient, Message
+from wattmagent.llm.client import LLMClient, Message, _short
 
 
 def ok_response(text: str = "hi", pt: int = 10, ct: int = 5) -> dict[str, object]:
@@ -131,3 +131,10 @@ def test_null_content_and_odd_usage_are_handled() -> None:
     assert comp.text == "ok" and comp.model == "b"
     assert comp.prompt_tokens == 0 and comp.completion_tokens == 0
     assert t.calls == ["a", "b"]
+
+
+def test_error_body_excerpt_is_one_short_line() -> None:
+    assert _short("model\n  not   supported\tby provider") == "model not supported by provider"
+    long = _short("x" * 500)
+    assert len(long) == 163 and long.endswith("...")
+    assert _short("") == ""

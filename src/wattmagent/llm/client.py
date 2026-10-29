@@ -78,11 +78,17 @@ class HttpxTransport:
         if r.status_code in (401, 403):
             raise AuthError("token missing or rejected")
         if r.status_code in (400, 404, 408, 429) or r.status_code >= 500:
-            raise ModelUnavailable(f"{model}: HTTP {r.status_code}")
+            raise ModelUnavailable(f"{model}: HTTP {r.status_code} {_short(r.text)}".strip())
         if r.status_code != 200:
             raise LLMError(f"{model}: unexpected HTTP {r.status_code}")
         data: dict[str, object] = r.json()
         return data
+
+
+def _short(text: str, limit: int = 160) -> str:
+    """One-line, length-limited excerpt of a provider's error body, for diagnostics."""
+    flat = " ".join(text.split())
+    return flat[:limit] + ("..." if len(flat) > limit else "")
 
 
 def _estimate_tokens(messages: list[Message], max_tokens: int) -> int:
