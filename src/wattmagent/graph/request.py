@@ -202,6 +202,10 @@ def parse_request(
     try:
         return parse_with_llm(client, text, usage), "parse: model"
     except (LLMError, BudgetExceeded) as exc:
-        return parse_with_rules(text), f"parse: rules (model unavailable: {type(exc).__name__})"
+        detail = " ".join(str(exc).split())[:200]
+        return (
+            parse_with_rules(text),
+            f"parse: rules (model unavailable: {type(exc).__name__}: {detail})",
+        )
     except ParseError as exc:
         return parse_with_rules(text), f"parse: rules (model reply rejected: {exc})"
