@@ -155,7 +155,7 @@ class LLMClient:
             except (CreditsExhausted, AuthError):
                 raise  # same token everywhere: do not burn the chain
             except ModelUnavailable as e:
-                log.warning("model failed, trying next", extra={"msg_model": model})
+                log.warning("model failed, trying next: %s", e)
                 last_err = e
                 continue
             self._budget.record(comp.prompt_tokens + comp.completion_tokens)
