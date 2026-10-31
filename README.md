@@ -9,7 +9,7 @@ The LLM agent handles what optimisers are bad at: turning requests into
 constraints, replanning when conditions change, explaining plans, and enforcing a
 safety check before anything executes.
 
-## Status
+## Status (honest)
 
 | Area | State |
 |---|---|
@@ -25,9 +25,10 @@ safety check before anything executes.
 | Safety layer: independent plan verifier, price-freshness check, verified fallback, audit log | done, tested |
 | Heat pump model, solar | not started |
 | Agent: plain-language request -> validated constraints -> safe plan -> checked explanation (model with rule fallback; LangGraph or built-in runner) | done, tested with a scripted fake model; real-model run not yet verified |
-| Replanning, API around the agent | not started |
+| Replanning | not started |
 | CI (lint, types, tests, security, image scan) | green on GitHub Actions |
-| API (health check only), Docker deployment | scaffold only |
+| API: `POST /v1/plans` with keys, rate limit, request IDs, idempotency, health and readiness | built; HTTP tests need FastAPI installed (run in CI) |
+| Docker deployment | scaffold only |
 
 No household savings figure is claimed. Measured backtest results on real prices, with every
 assumption stated, are in `docs/results.md`. Results from `--synthetic` are labelled SYNTHETIC

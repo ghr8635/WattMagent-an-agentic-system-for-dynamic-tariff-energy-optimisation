@@ -59,6 +59,7 @@ files = [
     "src/wattmagent/graph",
     "src/wattmagent/tariff",
     "src/wattmagent/backtest",
+    "src/wattmagent/api",
 ]
 plugins = ["pydantic.mypy"]
 

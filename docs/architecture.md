@@ -13,7 +13,7 @@
 | `backtest` | Replay a price series; bill schedules on *actual* prices (EV-only and whole-household) | done |
 | `llm` | HF Inference Providers client, fallback chain, budget, cache | done |
 | `graph` | Agent: parse request, validate, plan (via `safety`), explain; LangGraph or built-in runner | done (no replanning yet) |
-| `api` | FastAPI: auth, rate limiting, streaming | health check only |
+| `api` | FastAPI: API keys, rate limit, request IDs, idempotency, health and readiness; framework-free core in `security`, `ratelimit`, `idempotency`, `service` | done (single process; no streaming) |
 
 ## Key decisions
 1. **Optimiser decides, agent orchestrates.** Schedules come from deterministic

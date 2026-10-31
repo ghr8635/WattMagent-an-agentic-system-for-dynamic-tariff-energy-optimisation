@@ -26,12 +26,14 @@ real customers or devices.
       battery end state, cost vs baseline; attacked by tests with deliberately broken plans
 - [x] Audit log: one structured record per decision (JSON Lines), no personal data
 - [x] Data freshness check: stale, missing or implausible prices trigger the fallback (tested)
-- [ ] Idempotent actions: repeating a request never double-books a device
+- [x] Idempotent requests: `Idempotency-Key` replays the stored answer; the same key with another request is a 409 (in-memory store, per process; tested)
 
 ### API and operations
-- [ ] Authentication, rate limiting, request IDs, input validation
+- [x] Authentication (API keys, constant-time), rate limiting, request IDs, input validation (tested)
+- [ ] Shared state for several replicas: rate limit and idempotency store are in memory, so per process (use Redis or a database)
+- [ ] Per-IP throttling of failed logins, TLS and key rotation at the proxy
 - [ ] Structured logs, metrics (latency, token use, cache hits, plan cost), tracing
-- [ ] Health and readiness endpoints that check dependencies, not just "process is up"
+- [x] Health (`/healthz`) and readiness (`/readyz`: prices present, fresh, covering the window)
 - [ ] Locked dependency versions (lockfile) and reproducible builds
 - [ ] Deployment with smoke test and automatic rollback
 - [ ] Load test; failure tests (LLM down, price feed down, slow responses)
