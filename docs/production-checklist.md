@@ -32,6 +32,7 @@ real customers or devices.
 - [x] Authentication (API keys, constant-time), rate limiting, request IDs, input validation (tested)
 - [ ] Shared state for several replicas: rate limit and idempotency store are in memory, so per process (use Redis or a database)
 - [ ] Per-IP throttling of failed logins, TLS and key rotation at the proxy
+- [x] Live day-ahead price ingestion with real fetch time, stale-data fallback and strict parsing (tested on a recorded real sample)
 - [ ] Structured logs, metrics (latency, token use, cache hits, plan cost), tracing
 - [x] Health (`/healthz`) and readiness (`/readyz`: prices present, fresh, covering the window)
 - [ ] Locked dependency versions (lockfile) and reproducible builds

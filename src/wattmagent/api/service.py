@@ -7,6 +7,7 @@ leaves out the agent's internal trace, which can quote model-server error text.
 from __future__ import annotations
 
 import json
+import logging
 import threading
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -16,12 +17,15 @@ from typing import Any, Protocol
 
 from wattmagent.core.errors import WattMagentError
 from wattmagent.data.prices import load_csv
+from wattmagent.data.smard_live import JsonFetch, PriceFeedError, fetch_prices
 from wattmagent.graph import AgentContext, AgentDeps, run_agent
 from wattmagent.graph.context import window_start_for
 from wattmagent.graph.request import Completer
 from wattmagent.graph.validate import HORIZON_HOURS
 from wattmagent.safety.audit import AuditLog
 from wattmagent.safety.freshness import PriceSnapshot, check_price_snapshot
+
+log = logging.getLogger(__name__)
 
 
 class ServiceUnavailable(WattMagentError):
@@ -57,6 +61,56 @@ class CsvContextProvider:
                     self._mtime_ns = mtime_ns
             except (OSError, ValueError) as exc:
                 raise ServiceUnavailable(f"price data unavailable: {type(exc).__name__}") from exc
+            assert self._ctx is not None
+            return self._ctx
+
+
+class LiveContextProvider:
+    """Serves live SMARD prices, refreshed at most every ``refresh_s`` seconds.
+
+    ``fetched_at`` is the moment WE fetched. If a refresh fails, the previous prices keep
+    being served with their old ``fetched_at``, so the freshness check turns "the feed is
+    down" into a safe fallback after its age limit, instead of hiding it. The refresh
+    runs under a lock, so concurrent requests wait for one fetch (bounded by the timeout)
+    rather than each starting their own.
+    """
+
+    def __init__(
+        self,
+        fetch: JsonFetch,
+        tz: tzinfo,
+        *,
+        refresh_s: float = 900.0,
+        weeks: int = 2,
+        clock: Callable[[], datetime] = lambda: datetime.now(UTC),
+    ) -> None:
+        self._fetch = fetch
+        self._tz = tz
+        self._refresh_s = refresh_s
+        self._weeks = weeks
+        self._clock = clock
+        self._ctx: AgentContext | None = None
+        self._tried_at: datetime | None = None  # last attempt, successful or not
+        self._lock = threading.Lock()
+
+    def get(self) -> AgentContext:
+        with self._lock:
+            now = self._clock()
+            due = (
+                self._ctx is None
+                or self._tried_at is None
+                or (now - self._tried_at).total_seconds() >= self._refresh_s
+            )
+            if due:
+                self._tried_at = now
+                try:
+                    got = fetch_prices(self._fetch, weeks=self._weeks, clock=self._clock)
+                except PriceFeedError as exc:
+                    if self._ctx is None:
+                        raise ServiceUnavailable(f"price feed unavailable: {exc}") from exc
+                    log.warning("price refresh failed, keeping older prices: %s", exc)
+                else:
+                    self._ctx = AgentContext(got.points, got.fetched_at, self._tz)
             assert self._ctx is not None
             return self._ctx
 

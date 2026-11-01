@@ -1,6 +1,14 @@
 # API
 
-Run it (price file required; keys are your own random strings of 16+ characters):
+Run it (keys are your own random strings of 16+ characters). Live prices from SMARD need no file:
+
+```powershell
+$env:WATTMAGENT_API_KEYS = "<key1>,<key2>"
+$env:WATTMAGENT_PRICE_SOURCE = "smard"
+python -m uvicorn --factory wattmagent.api.app:create_app --port 8000
+```
+
+Or plan on a price file you converted yourself:
 
 ```powershell
 $env:WATTMAGENT_API_KEYS = "<key1>,<key2>"
@@ -8,7 +16,8 @@ $env:WATTMAGENT_PRICE_CSV = "data\prices_hourly_utc.csv"
 python -m uvicorn --factory wattmagent.api.app:create_app --port 8000
 ```
 
-The app refuses to start without keys or without a price file. The language backend is
+The app refuses to start without keys, or with `WATTMAGENT_PRICE_SOURCE=csv` (the default)
+and no price file. The language backend is
 `rules` unless `WATTMAGENT_LANGUAGE_BACKEND=llm`.
 
 ## Endpoints
@@ -39,6 +48,13 @@ returned.
   body, including its original `request_id`.
 - **Logs** contain request id, method, path, status, duration and a short key id; never keys,
   request text or prices.
+- **Live prices** (`smard`): fetched at most every `WATTMAGENT_PRICE_REFRESH_S` seconds
+  (default 900). The age that counts is when *we* fetched. If SMARD cannot be reached, the
+  previous prices keep being served with their old fetch time, so after 36 h the freshness
+  check forces the safe fallback. A missing hour is caught the same way: `/readyz` stays
+  "not ready" until the feed covers the next 24 h. A refresh waits on a lock, so requests
+  arriving during a refresh wait for it (at most the 10 s fetch timeout per file).
 - **Limits of this version:** rate limit and idempotency are in memory, so they hold per
-  process; a second replica would count separately. Prices come from a CSV file read by
-  modification time; live fetching comes later. Base load is synthetic.
+  process; a second replica would count separately. Base load is synthetic. With the `csv` source,
+  prices come from a file whose modification time stands in for the fetch time, which
+  re-converting an old export can fake; the `smard` source records the real fetch time.

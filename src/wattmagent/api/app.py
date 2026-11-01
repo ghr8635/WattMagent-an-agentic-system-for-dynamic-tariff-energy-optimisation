@@ -25,7 +25,13 @@ from wattmagent import __version__
 from wattmagent.api.idempotency import IdempotencyStore, Kind, StoredResponse
 from wattmagent.api.ratelimit import RateLimiter
 from wattmagent.api.security import KeyRing
-from wattmagent.api.service import CsvContextProvider, PlanService, ServiceUnavailable
+from wattmagent.api.service import (
+    ContextProvider,
+    CsvContextProvider,
+    LiveContextProvider,
+    PlanService,
+    ServiceUnavailable,
+)
 from wattmagent.core.config import Settings
 from wattmagent.graph.request import MAX_REQUEST_CHARS
 from wattmagent.safety.audit import InMemoryAuditLog, JsonlAuditLog
@@ -42,9 +48,18 @@ class PlanRequest(BaseModel):
 
 
 def service_from_settings(settings: Settings) -> PlanService:
-    if settings.price_csv is None:
-        raise RuntimeError("WATTMAGENT_PRICE_CSV is not set: the API has no price data to plan on")
-    provider = CsvContextProvider(settings.price_csv, ZoneInfo(settings.timezone))
+    tz = ZoneInfo(settings.timezone)
+    provider: ContextProvider
+    if settings.price_source == "smard":
+        from wattmagent.data.smard_live import HttpxFetch
+
+        provider = LiveContextProvider(HttpxFetch(), tz, refresh_s=settings.price_refresh_s)
+    elif settings.price_source == "csv":
+        if settings.price_csv is None:
+            raise RuntimeError("WATTMAGENT_PRICE_CSV is not set: no price data to plan on")
+        provider = CsvContextProvider(settings.price_csv, tz)
+    else:
+        raise RuntimeError(f"unknown price source: {settings.price_source!r}")
     audit = JsonlAuditLog(settings.audit_log) if settings.audit_log else InMemoryAuditLog()
     llm = None
     if settings.language_backend == "llm":

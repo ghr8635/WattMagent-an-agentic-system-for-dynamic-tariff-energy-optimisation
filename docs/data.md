@@ -62,3 +62,23 @@ so daylight-saving nights are 12 or 14 hours long, as in real life.
 ## Synthetic data
 `synthetic_prices` is seeded and deterministic, for tests only. Output derived
 from it must carry the label SYNTHETIC.
+
+## Live source: SMARD chart-data feed
+
+Used by the API with `WATTMAGENT_PRICE_SOURCE=smard`; check it from your machine with
+`python -m wattmagent.data.smard_live`.
+
+| Item | Value |
+|---|---|
+| Credit | "Bundesnetzagentur | SMARD.de" (CC BY 4.0), same as the download page |
+| Series | filter `4169` (day-ahead price), region `DE` (Germany/Luxembourg), resolution `hour` |
+| Index | `https://www.smard.de/app/chart_data/4169/DE/index_hour.json`: `{"timestamps": [ms, ...]}`, week starts (Monday 00:00 German time), oldest first |
+| Week file | `.../4169/DE/4169_DE_hour_<ms>.json`: `{"meta_data": {"created": ms}, "series": [[ms, EUR/MWh or null], ...]}` |
+| Observed on | 2026-11-01: index ended with the coming Monday; a week file had 168 hourly rows; the file for the week of 26 Oct was created 2026-10-31 13:03 UTC |
+
+This layout was read from real responses, not from documentation: SMARD publishes no
+contract for it, so the parser rejects anything unexpected (wrong types, off-hour
+timestamps, rows out of order) rather than guessing. **Unverified:** how SMARD derives the
+hourly series from 15-minute products (mean assumed), and when exactly the file for a new
+day appears after the day-ahead auction. A recorded real sample is in
+`tests/fixtures/smard_hour_week.json`.
