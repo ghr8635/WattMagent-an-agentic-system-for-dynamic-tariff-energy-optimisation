@@ -1,0 +1,18 @@
+# Keep secrets, caches and local clutter out of the build context.
+.git
+.github
+.venv
+.env
+.env.*
+!.env.example
+.cache
+.mypy_cache
+.ruff_cache
+.pytest_cache
+__pycache__
+*.pyc
+*.zip
+tmp_update
+data
+tests
+docs

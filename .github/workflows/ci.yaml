@@ -64,6 +64,12 @@ jobs:
           tags: wattmagent:ci
           cache-from: type=gha
           cache-to: type=gha,mode=max
+      - name: Smoke test (non-root, read-only, auth, idempotency)
+        run: bash scripts/smoke_test.sh wattmagent:ci
+      - name: Validate the compose file
+        run: |
+          cp .env.example .env
+          docker compose -f deploy/compose.yaml config -q
       - name: Scan image
         uses: aquasecurity/trivy-action@v0.36.0
         with:
