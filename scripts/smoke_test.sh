@@ -9,7 +9,9 @@ set -euo pipefail
 IMAGE="${1:?usage: smoke_test.sh <image>}"
 PORT="${SMOKE_PORT:-18000}"
 BASE="http://127.0.0.1:${PORT}"
-KEY="smoke-test-key-0123456789"
+# Keys are generated per run, so no key-shaped literal lives in the repository.
+KEY="$(python3 -c 'import secrets; print(secrets.token_urlsafe(24))')"
+WRONG_KEY="${KEY}-wrong"
 NAME="wattmagent-smoke-$$"
 WORK="$(mktemp -d)"
 FAILED=0
@@ -70,7 +72,7 @@ BODY='{"text": "80% by 7am"}'
 JSON=(-H 'Content-Type: application/json')
 
 [ "$(code -X POST "${JSON[@]}" -d "$BODY" "$BASE/v1/plans")" = 401 ] || fail "request without a key was not refused"
-[ "$(code -X POST "${JSON[@]}" -H 'X-API-Key: wrong-key-0123456789' -d "$BODY" "$BASE/v1/plans")" = 401 ] \
+[ "$(code -X POST "${JSON[@]}" -H "X-API-Key: $WRONG_KEY" -d "$BODY" "$BASE/v1/plans")" = 401 ] \
   || fail "wrong key was not refused"
 [ "$(code -X POST "${JSON[@]}" -H "X-API-Key: $KEY" -d '{"text": ""}' "$BASE/v1/plans")" = 422 ] \
   || fail "empty request text was not rejected"

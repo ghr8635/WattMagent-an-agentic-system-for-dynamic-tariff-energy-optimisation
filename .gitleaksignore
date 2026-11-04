@@ -1,0 +1,5 @@
+# Two findings in the first version of scripts/smoke_test.sh (commit 77ab82d): a throw-away
+# test key and a deliberately wrong key, used only to test the 401 path. They are not
+# secrets, and the script now generates its keys at run time. Fingerprints are from the CI report.
+77ab82db33694a21b1dd3db2f6e812171ffa08ff:scripts/smoke_test.sh:generic-api-key:12
+77ab82db33694a21b1dd3db2f6e812171ffa08ff:scripts/smoke_test.sh:generic-api-key:73
