@@ -1,15 +1,14 @@
 # syntax=docker/dockerfile:1
 FROM python:3.12-slim AS build
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 WORKDIR /app
-COPY pyproject.toml uv.lock* README.md ./
+COPY pyproject.toml README.md ./
 COPY src ./src
-RUN uv venv /opt/venv && VIRTUAL_ENV=/opt/venv uv pip install --no-cache "."
+RUN python -m venv /opt/venv && /opt/venv/bin/pip install --no-cache-dir "."
 
 FROM python:3.12-slim
 RUN useradd --create-home --uid 10001 app
 COPY --from=build /opt/venv /opt/venv
-ENV PATH="/opt/venv/bin:$PATH" PYTHONUNBUFFERED=1 HF_HOME=/home/app/.hf
+ENV PATH="/opt/venv/bin:$PATH" PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
 USER app
 WORKDIR /home/app
 EXPOSE 8000

@@ -8,7 +8,10 @@ services:
     restart: unless-stopped
     read_only: true
     tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
     volumes:
+      - audit:/home/app/data # WATTMAGENT_AUDIT_LOG=/home/app/data/audit.jsonl
       - llm_cache:/home/app/.cache/llm
 
   caddy:
@@ -21,5 +24,6 @@ services:
     restart: unless-stopped
 
 volumes:
+  audit:
   llm_cache:
   caddy_data:

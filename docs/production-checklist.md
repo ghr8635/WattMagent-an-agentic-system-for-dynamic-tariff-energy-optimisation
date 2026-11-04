@@ -36,7 +36,9 @@ real customers or devices.
 - [ ] Structured logs, metrics (latency, token use, cache hits, plan cost), tracing
 - [x] Health (`/healthz`) and readiness (`/readyz`: prices present, fresh, covering the window)
 - [ ] Locked dependency versions (lockfile) and reproducible builds
-- [ ] Deployment with smoke test and automatic rollback
+- [x] Container smoke test in CI: non-root user, read-only filesystem, no capabilities, 401 without a key, replay on repeated `Idempotency-Key` (`scripts/smoke_test.sh`)
+- [ ] Deployment with automatic rollback: `deploy/deploy.sh` is written but untested, no host yet
+- [ ] Locked image inputs: base image digest and a dependency lockfile (the image currently installs the newest allowed versions)
 - [ ] Load test; failure tests (LLM down, price feed down, slow responses)
 - [ ] Runbook, backup and restore of state, alerting plan
 
