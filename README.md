@@ -9,7 +9,7 @@ The LLM agent handles what optimisers are bad at: turning requests into
 constraints, replanning when conditions change, explaining plans, and enforcing a
 safety check before anything executes.
 
-## Status
+## Status (honest)
 
 | Area | State |
 |---|---|
@@ -25,7 +25,7 @@ safety check before anything executes.
 | Safety layer: independent plan verifier, price-freshness check, verified fallback, audit log | done, tested |
 | Heat pump model, solar | not started |
 | Agent: plain-language request -> validated constraints -> safe plan -> checked explanation (model with rule fallback; LangGraph or built-in runner) | done, tested with a scripted fake model; real-model run not yet verified |
-| Replanning | not started |
+| Replanning: plan again from the car's real charge, the time left and fresh prices (`POST /v1/plans/{id}/replan`) | built; the client has to ask, nothing triggers it by itself |
 | CI (lint, types, tests, security, image scan) | green on GitHub Actions |
 | API: `POST /v1/plans` with keys, rate limit, request IDs, idempotency, health and readiness | built; HTTP tests need FastAPI installed (run in CI) |
 | Docker deployment | scaffold only |

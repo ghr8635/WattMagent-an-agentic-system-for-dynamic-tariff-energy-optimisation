@@ -26,7 +26,8 @@ and no price file. The language backend is
 |---|---|---|
 | `GET /healthz` | none | the process is up |
 | `GET /readyz` | none | 200 if prices are present, fresh and cover the next 24 h, else 503 with reasons |
-| `POST /v1/plans` | `X-API-Key` | body `{"text": "90% by 6:30, not before 22:00"}` (1-500 characters) |
+| `POST /v1/plans` | `X-API-Key` | body `{"text": "90% by 6:30, not before 22:00"}` (1-500 characters); a planned answer carries a `plan_id` |
+| `POST /v1/plans/{plan_id}/replan` | `X-API-Key` | body `{"current_percent": 55, "battery_percent": 40}` (battery optional); see docs/replanning.md |
 
 `POST /v1/plans` answers 200 with `status` `planned` or `needs_input` (the questions are in
 `message`), 422 for an unusable request (`status: error`, or a malformed body), 401 for a

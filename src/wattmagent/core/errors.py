@@ -24,3 +24,11 @@ class ProviderUnavailable(LLMError):
 
 class BudgetExceeded(WattMagentError):
     """Our own daily token budget is used up (protects the free tier)."""
+
+
+class ReplanError(WattMagentError):
+    """A replan request that cannot be carried out; ``status_code`` is the HTTP meaning."""
+
+    def __init__(self, message: str, status_code: int = 409) -> None:
+        super().__init__(message)
+        self.status_code = status_code

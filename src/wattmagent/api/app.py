@@ -14,6 +14,7 @@ import math
 import re
 import time
 import uuid
+from collections.abc import Callable
 from typing import Annotated, Any
 from zoneinfo import ZoneInfo
 
@@ -24,6 +25,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from wattmagent import __version__
 from wattmagent.api.idempotency import IdempotencyStore, Kind, StoredResponse
 from wattmagent.api.metrics import ApiMetrics
+from wattmagent.api.plans import PlanStore
 from wattmagent.api.ratelimit import RateLimiter
 from wattmagent.api.security import KeyRing
 from wattmagent.api.service import (
@@ -34,6 +36,7 @@ from wattmagent.api.service import (
     ServiceUnavailable,
 )
 from wattmagent.core.config import Settings
+from wattmagent.core.errors import ReplanError
 from wattmagent.core.logsetup import configure_logging
 from wattmagent.graph.request import MAX_REQUEST_CHARS
 from wattmagent.safety.audit import InMemoryAuditLog, JsonlAuditLog
@@ -42,11 +45,20 @@ log = logging.getLogger("wattmagent.api")
 
 _REQUEST_ID = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
 _IDEMPOTENCY_KEY = re.compile(r"^[A-Za-z0-9._-]{8,128}$")
+_PLAN_ID = re.compile(r"^[0-9a-f]{32}$")
 
 
 class PlanRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     text: str = Field(min_length=1, max_length=MAX_REQUEST_CHARS)
+
+
+class ReplanRequest(BaseModel):
+    """What the client knows now: the car's real charge, and optionally the battery's."""
+
+    model_config = ConfigDict(extra="forbid")
+    current_percent: float = Field(ge=0, le=100)
+    battery_percent: float | None = Field(default=None, ge=0, le=100)
 
 
 def service_from_settings(settings: Settings) -> PlanService:
@@ -70,7 +82,7 @@ def service_from_settings(settings: Settings) -> PlanService:
         llm = build_client(settings)
     elif settings.language_backend != "rules":
         raise RuntimeError(f"unknown language backend: {settings.language_backend!r}")
-    return PlanService(provider, audit=audit, llm=llm)
+    return PlanService(provider, audit=audit, llm=llm, store=PlanStore(settings.plan_ttl_s))
 
 
 def create_app(
@@ -143,6 +155,13 @@ def create_app(
             {"detail": str(exc), "request_id": request.state.request_id}, status_code=503
         )
 
+    @app.exception_handler(ReplanError)
+    async def replan_refused(request: Request, exc: ReplanError) -> JSONResponse:
+        return JSONResponse(
+            {"detail": str(exc), "request_id": request.state.request_id},
+            status_code=exc.status_code,
+        )
+
     @app.exception_handler(Exception)
     async def unexpected(request: Request, exc: Exception) -> JSONResponse:
         rid = getattr(request.state, "request_id", "-")
@@ -166,20 +185,19 @@ def create_app(
             return JSONResponse({"status": "not_ready", "reasons": reasons}, status_code=503)
         return JSONResponse({"status": "ready"})
 
-    @app.post("/v1/plans")
-    def create_plan(
-        body: PlanRequest,
-        request: Request,
-        who: Annotated[str, Depends(require_key)],
-        idempotency_key: Annotated[str | None, Header()] = None,
+    def idempotent(
+        who: str,
+        key: str | None,
+        fingerprint: str,
+        run: Callable[[], tuple[int, dict[str, Any]]],
     ) -> JSONResponse:
-        if idempotency_key is not None and not _IDEMPOTENCY_KEY.match(idempotency_key):
+        """Run ``run`` once per (caller, Idempotency-Key); a repeat gets the stored answer."""
+        if key is not None and not _IDEMPOTENCY_KEY.match(key):
             raise HTTPException(
                 422, "Idempotency-Key must be 8-128 characters of letters, digits, . _ -"
             )
-        if idempotency_key is not None:
-            fingerprint = hashlib.sha256(body.text.encode("utf-8")).hexdigest()
-            begun = idem.begin(who, idempotency_key, fingerprint)
+        if key is not None:
+            begun = idem.begin(who, key, fingerprint)
             if begun.kind is Kind.REPLAY and begun.stored is not None:
                 meter.replays.inc()
                 return JSONResponse(
@@ -194,15 +212,61 @@ def create_app(
             if begun.kind is Kind.IN_FLIGHT:
                 raise HTTPException(409, "a request with this Idempotency-Key is still running")
         try:
-            status, payload = svc.plan(body.text, request.state.request_id)
+            status, payload = run()
         except BaseException:
-            if idempotency_key is not None:
-                idem.abort(who, idempotency_key)
+            if key is not None:
+                idem.abort(who, key)  # nothing was stored: the client may retry
             raise
-        if idempotency_key is not None:
-            idem.finish(who, idempotency_key, StoredResponse(status, payload))
-        meter.plans.inc(str(payload["status"]), str(payload.get("decision") or "none"))
+        if key is not None:
+            idem.finish(who, key, StoredResponse(status, payload))
         return JSONResponse(payload, status_code=status)
+
+    @app.post("/v1/plans")
+    def create_plan(
+        body: PlanRequest,
+        request: Request,
+        who: Annotated[str, Depends(require_key)],
+        idempotency_key: Annotated[str | None, Header()] = None,
+    ) -> JSONResponse:
+        def run() -> tuple[int, dict[str, Any]]:
+            status, payload = svc.plan(body.text, request.state.request_id, owner=who)
+            meter.plans.inc(str(payload["status"]), str(payload.get("decision") or "none"))
+            return status, payload
+
+        fingerprint = hashlib.sha256(body.text.encode("utf-8")).hexdigest()
+        return idempotent(who, idempotency_key, fingerprint, run)
+
+    @app.post("/v1/plans/{plan_id}/replan")
+    def replan_plan(
+        plan_id: str,
+        body: ReplanRequest,
+        request: Request,
+        who: Annotated[str, Depends(require_key)],
+        idempotency_key: Annotated[str | None, Header()] = None,
+    ) -> JSONResponse:
+        if not _PLAN_ID.match(plan_id):
+            meter.replans.inc("not_found")
+            raise HTTPException(404, "unknown or expired plan")
+
+        def run() -> tuple[int, dict[str, Any]]:
+            try:
+                status, payload = svc.replan(
+                    plan_id,
+                    who,
+                    body.current_percent,
+                    body.battery_percent,
+                    request.state.request_id,
+                )
+            except ReplanError as exc:
+                meter.replans.inc("not_found" if exc.status_code == 404 else "rejected")
+                raise
+            meter.replans.inc("planned" if payload["status"] == "planned" else "needs_attention")
+            return status, payload
+
+        fingerprint = hashlib.sha256(
+            f"{plan_id}|{body.current_percent}|{body.battery_percent}".encode()
+        ).hexdigest()
+        return idempotent(who, idempotency_key, fingerprint, run)
 
     @app.get("/metrics")
     def metrics_endpoint() -> Response:

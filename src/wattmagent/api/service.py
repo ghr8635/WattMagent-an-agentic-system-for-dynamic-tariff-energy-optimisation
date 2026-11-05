@@ -9,16 +9,19 @@ from __future__ import annotations
 import json
 import logging
 import threading
+import uuid
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, tzinfo
 from pathlib import Path
 from typing import Any, Protocol
 
-from wattmagent.core.errors import WattMagentError
+from wattmagent.api.plans import PlanStore
+from wattmagent.core.errors import ReplanError, WattMagentError
 from wattmagent.data.prices import load_csv
 from wattmagent.data.smard_live import JsonFetch, PriceFeedError, fetch_prices
 from wattmagent.graph import AgentContext, AgentDeps, run_agent
+from wattmagent.graph.agent import AgentResponse, run_replan
 from wattmagent.graph.context import window_start_for
 from wattmagent.graph.request import Completer
 from wattmagent.graph.validate import HORIZON_HOURS
@@ -122,6 +125,7 @@ class PlanService:
     llm: Completer | None = None
     engine: str = "simple"
     clock: Callable[[], datetime] = lambda: datetime.now(UTC)
+    store: PlanStore = field(default_factory=PlanStore)
     _last_fetched: datetime | None = field(default=None, init=False, repr=False)
 
     def price_age_hours(self) -> float | None:
@@ -130,16 +134,7 @@ class PlanService:
             return None
         return max((self.clock() - self._last_fetched).total_seconds() / 3600, 0.0)
 
-    def plan(self, text: str, request_id: str) -> tuple[int, dict[str, Any]]:
-        ctx = self.provider.get()
-        self._last_fetched = ctx.fetched_at
-        resp = run_agent(
-            text,
-            AgentDeps(ctx, llm=self.llm, audit=self.audit),
-            self.clock(),
-            request_id=request_id,
-            engine=self.engine,
-        )
+    def _body(self, resp: AgentResponse) -> dict[str, Any]:
         body: dict[str, Any] = {
             "status": resp.status,
             "message": resp.message,
@@ -150,7 +145,89 @@ class PlanService:
             "facts": resp.facts,
             "model_calls": resp.usage.llm_calls,
         }
+        return body
+
+    def _remember(self, plan_id: str, owner: str, resp: AgentResponse) -> int:
+        assert resp.validated is not None and resp.facts is not None
+        stored = self.store.save(
+            plan_id,
+            owner,
+            resp.validated,
+            list(resp.facts["charge_windows"]),
+            resp.facts["ev_cost_eur"],
+        )
+        return stored.version
+
+    def plan(self, text: str, request_id: str, owner: str = "") -> tuple[int, dict[str, Any]]:
+        ctx = self.provider.get()
+        self._last_fetched = ctx.fetched_at
+        resp = run_agent(
+            text,
+            AgentDeps(ctx, llm=self.llm, audit=self.audit),
+            self.clock(),
+            request_id=request_id,
+            engine=self.engine,
+        )
+        body = self._body(resp)
+        if resp.status == "planned" and resp.validated is not None:
+            plan_id = uuid.uuid4().hex
+            body["plan_id"] = plan_id
+            body["version"] = self._remember(plan_id, owner, resp)
         body = json.loads(json.dumps(body, default=str))  # plain JSON types only
+        return (422 if resp.status == "error" else 200), body
+
+    def replan(
+        self,
+        plan_id: str,
+        owner: str,
+        current_percent: float,
+        battery_percent: float | None,
+        request_id: str,
+    ) -> tuple[int, dict[str, Any]]:
+        """Plan again from now for a stored plan, using the car's real charge.
+
+        Prices are whatever the provider holds now, and the time left is counted from
+        now, so a replan also picks up fresher prices and a shorter night.
+        """
+        previous = self.store.get(plan_id, owner)
+        if previous is None:
+            raise ReplanError("unknown or expired plan", 404)
+        ctx = self.provider.get()
+        self._last_fetched = ctx.fetched_at
+        if battery_percent is not None:
+            if ctx.battery is None:
+                raise ReplanError("no home battery is configured", 422)
+            try:
+                battery = replace(ctx.battery, initial_soc=battery_percent / 100.0)
+            except ValueError as exc:
+                raise ReplanError(
+                    f"battery charge must lie between {ctx.battery.min_soc:.0%} and "
+                    f"{ctx.battery.max_soc:.0%}",
+                    422,
+                ) from exc
+            ctx = replace(ctx, battery=battery)
+        # The audit record's request id ties the replan to its plan: "<plan id>.r<version>".
+        audit_id = f"{plan_id}.r{previous.version + 1}"
+        resp = run_replan(
+            previous.validated,
+            current_percent / 100.0,
+            AgentDeps(ctx, llm=self.llm, audit=self.audit),
+            self.clock(),
+            request_id=audit_id,
+        )
+        body = self._body(resp)
+        body["request_id"] = request_id
+        if resp.status == "planned" and resp.validated is not None:
+            body["plan_id"] = plan_id
+            body["version"] = self._remember(plan_id, owner, resp)
+            assert resp.facts is not None
+            body["previous"] = {
+                "version": previous.version,
+                "charge_windows": previous.charge_windows,
+                "ev_cost_eur": previous.ev_cost_eur,
+            }
+            body["changed"] = previous.charge_windows != resp.facts["charge_windows"]
+        body = json.loads(json.dumps(body, default=str))
         return (422 if resp.status == "error" else 200), body
 
     def ready(self) -> list[str]:

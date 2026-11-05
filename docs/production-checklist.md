@@ -26,6 +26,7 @@ real customers or devices.
       battery end state, cost vs baseline; attacked by tests with deliberately broken plans
 - [x] Audit log: one structured record per decision (JSON Lines), no personal data
 - [x] Data freshness check: stale, missing or implausible prices trigger the fallback (tested)
+- [x] Replanning from the car's real charge and fresh prices; owner-scoped plan ids, time-limited, idempotent (tested; in-memory store, one replica)
 - [x] Idempotent requests: `Idempotency-Key` replays the stored answer; the same key with another request is a 409 (in-memory store, per process; tested)
 
 ### API and operations
