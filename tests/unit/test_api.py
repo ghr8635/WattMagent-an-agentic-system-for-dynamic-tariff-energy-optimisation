@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -137,3 +138,57 @@ def test_unexpected_error_gives_500_without_details(tmp_path: Path) -> None:
 def test_app_refuses_to_start_without_keys(tmp_path: Path) -> None:
     with pytest.raises(ValueError):
         create_app(Settings(api_keys="", _env_file=None), service=fresh_service(tmp_path))
+
+
+# ------------------------------------------------------------------------- metrics
+
+
+def scrape(c: TestClient) -> str:
+    r = c.get("/metrics")
+    assert r.status_code == 200 and r.headers["content-type"].startswith("text/plain")
+    return r.text
+
+
+def test_metrics_count_requests_by_route_template_and_outcome(tmp_path: Path) -> None:
+    c = client(fresh_service(tmp_path))
+    c.post("/v1/plans", json={"text": TEXT}, headers=AUTH)
+    c.get("/does-not-exist/with-secret-looking-part")
+    text = scrape(c)
+    assert 'wattmagent_http_requests_total{method="POST",route="/v1/plans",status="200"} 1' in text
+    assert 'route="unmatched",status="404"' in text
+    assert "secret-looking" not in text  # request paths never become labels
+    assert 'wattmagent_plan_results_total{status="planned",decision="optimised"} 1' in text
+    assert "wattmagent_http_request_duration_seconds_count" in text
+
+
+def test_metrics_count_auth_failures_replays_and_rate_limits(tmp_path: Path) -> None:
+    c = client(fresh_service(tmp_path), limiter=RateLimiter(3))
+    c.post("/v1/plans", json={"text": TEXT})  # no key: 401, not counted by the limiter
+    headers = {**AUTH, "Idempotency-Key": "metrics-0001"}
+    for _ in range(2):
+        c.post("/v1/plans", json={"text": TEXT}, headers=headers)  # one plan, one replay
+    c.post("/v1/plans", json={"text": TEXT}, headers=AUTH)  # third allowed call
+    c.post("/v1/plans", json={"text": TEXT}, headers=AUTH)  # over the limit: 429
+    text = scrape(c)
+    assert "wattmagent_auth_failures_total 1" in text
+    assert "wattmagent_idempotent_replays_total 1" in text
+    assert "wattmagent_rate_limited_total 1" in text
+
+
+def test_price_age_gauge_appears_once_prices_were_used(tmp_path: Path) -> None:
+    sample = re.compile(r"^wattmagent_price_age_hours ", re.MULTILINE)  # a value, not HELP/TYPE
+    c = client(fresh_service(tmp_path))
+    assert sample.search(scrape(c)) is None
+    c.get("/readyz")
+    assert sample.search(scrape(c)) is not None
+
+
+def test_server_errors_are_counted_as_500(tmp_path: Path) -> None:
+    class Boom(PlanService):
+        def plan(self, text: str, request_id: str) -> tuple[int, dict[str, Any]]:
+            raise RuntimeError("boom")
+
+    base = fresh_service(tmp_path)
+    c = client(Boom(base.provider, clock=lambda: NOW), raise_server_exceptions=False)
+    assert c.post("/v1/plans", json={"text": TEXT}, headers=AUTH).status_code == 500
+    assert 'route="/v1/plans",status="500"} 1' in scrape(c)

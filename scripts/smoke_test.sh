@@ -85,5 +85,7 @@ grep -qi '^x-request-id:' "$WORK/h1" || fail "response has no X-Request-ID"
 grep -qi '^idempotent-replay: true' "$WORK/h2" || fail "repeat with the same Idempotency-Key was not a replay"
 cmp -s "$WORK/b1" "$WORK/b2" || fail "replayed answer differs from the first answer"
 
+curl -fsS "$BASE/metrics" | grep -q '^wattmagent_http_requests_total{method="POST",route="/v1/plans",status="200"}' \
+  || fail "/metrics has no count for the plan requests"
 [ "$(docker inspect -f '{{.State.Running}}' "$NAME")" = true ] || fail "container stopped"
 echo "SMOKE TEST PASSED"

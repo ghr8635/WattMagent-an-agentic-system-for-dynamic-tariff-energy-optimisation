@@ -46,8 +46,9 @@ returned.
   text returns the stored answer with `Idempotent-Replay: true` and does not plan again. The
   same key with different text is 409. Entries live 24 h. A replay keeps the original
   body, including its original `request_id`.
-- **Logs** contain request id, method, path, status, duration and a short key id; never keys,
-  request text or prices.
+- **Logs** (`WATTMAGENT_LOG_FORMAT=text|json`, `WATTMAGENT_LOG_LEVEL`) carry request id, method,
+  path, status, duration in ms and a short key id, one line per request; never keys, request
+  text or prices. Metrics are at `GET /metrics`, see docs/observability.md.
 - **Live prices** (`smard`): fetched at most every `WATTMAGENT_PRICE_REFRESH_S` seconds
   (default 900). The age that counts is when *we* fetched. If SMARD cannot be reached, the
   previous prices keep being served with their old fetch time, so after 36 h the freshness

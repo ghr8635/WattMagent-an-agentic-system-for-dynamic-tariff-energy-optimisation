@@ -29,6 +29,8 @@ class Settings(BaseSettings):
     api_keys: str = ""  # comma-separated; the API refuses to start without one
     rate_limit_per_min: int = 20
     idempotency_ttl_s: int = 86_400
+    log_format: str = "text"  # "text" or "json" (one JSON object per line)
+    log_level: str = "INFO"
     price_source: str = "csv"  # "csv": price_csv below; "smard": live SMARD day-ahead feed
     price_refresh_s: int = 900  # live source: fetch at most this often
     price_csv: Path | None = None  # hourly price file the API plans from (timestamp,price_eur_mwh)
