@@ -23,6 +23,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from wattmagent import __version__
 from wattmagent.api.idempotency import IdempotencyStore, Kind, StoredResponse
+from wattmagent.api.metrics import ApiMetrics
 from wattmagent.api.ratelimit import RateLimiter
 from wattmagent.api.security import KeyRing
 from wattmagent.api.service import (
@@ -33,6 +34,7 @@ from wattmagent.api.service import (
     ServiceUnavailable,
 )
 from wattmagent.core.config import Settings
+from wattmagent.core.logsetup import configure_logging
 from wattmagent.graph.request import MAX_REQUEST_CHARS
 from wattmagent.safety.audit import InMemoryAuditLog, JsonlAuditLog
 
@@ -77,13 +79,17 @@ def create_app(
     service: PlanService | None = None,
     limiter: RateLimiter | None = None,
     store: IdempotencyStore | None = None,
+    metrics: ApiMetrics | None = None,
 ) -> FastAPI:
     """Build the app. Refuses to start without API keys. Tests inject ``service``."""
     cfg = settings or Settings()
+    configure_logging(cfg.log_format, cfg.log_level)
     keys = KeyRing(cfg.api_key_set)  # raises if none or too short
     svc = service or service_from_settings(cfg)
     rate = limiter or RateLimiter(cfg.rate_limit_per_min)
     idem = store or IdempotencyStore(cfg.idempotency_ttl_s)
+    meter = metrics or ApiMetrics(__version__)
+    meter.price_age_fn = svc.price_age_hours
 
     app = FastAPI(title="WattMagent", version=__version__)
 
@@ -93,28 +99,39 @@ def create_app(
         rid = inbound if _REQUEST_ID.match(inbound) else uuid.uuid4().hex
         request.state.request_id = rid
         started = time.monotonic()
-        response: Response = await call_next(request)
-        response.headers["X-Request-ID"] = rid
-        log.info(
-            "request_id=%s method=%s path=%s status=%s ms=%.0f key=%s",
-            rid,
-            request.method,
-            request.url.path,
-            response.status_code,
-            (time.monotonic() - started) * 1000,
-            getattr(request.state, "key_id", "-"),
-        )
-        return response
+        status = 500  # what a client sees if the app raises past every handler
+        try:
+            response: Response = await call_next(request)
+            status = response.status_code
+            response.headers["X-Request-ID"] = rid
+            return response
+        finally:
+            elapsed = time.monotonic() - started
+            route = getattr(request.scope.get("route"), "path", None) or "unmatched"
+            meter.observe_request(request.method, route, status, elapsed)
+            log.info(
+                "request",
+                extra={
+                    "request_id": rid,
+                    "method": request.method,
+                    "path": request.url.path,
+                    "status": status,
+                    "duration_ms": round(elapsed * 1000),
+                    "key_id": getattr(request.state, "key_id", "-"),
+                },
+            )
 
     def require_key(request: Request, x_api_key: Annotated[str | None, Header()] = None) -> str:
         who = keys.authenticate(x_api_key)
         if who is None:
+            meter.auth_failures.inc()
             raise HTTPException(
                 401, "missing or invalid API key", headers={"WWW-Authenticate": "ApiKey"}
             )
         request.state.key_id = who
         wait = rate.check(who)
         if wait > 0:
+            meter.rate_limited.inc()
             raise HTTPException(
                 429, "rate limit exceeded", headers={"Retry-After": str(math.ceil(wait))}
             )
@@ -164,6 +181,7 @@ def create_app(
             fingerprint = hashlib.sha256(body.text.encode("utf-8")).hexdigest()
             begun = idem.begin(who, idempotency_key, fingerprint)
             if begun.kind is Kind.REPLAY and begun.stored is not None:
+                meter.replays.inc()
                 return JSONResponse(
                     begun.stored.body,
                     status_code=begun.stored.status_code,
@@ -183,6 +201,12 @@ def create_app(
             raise
         if idempotency_key is not None:
             idem.finish(who, idempotency_key, StoredResponse(status, payload))
+        meter.plans.inc(str(payload["status"]), str(payload.get("decision") or "none"))
         return JSONResponse(payload, status_code=status)
+
+    @app.get("/metrics")
+    def metrics_endpoint() -> Response:
+        """Prometheus scrape target. Keep it off the public proxy (see deploy/Caddyfile)."""
+        return Response(meter.render(), media_type="text/plain; version=0.0.4; charset=utf-8")
 
     return app

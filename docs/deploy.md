@@ -11,6 +11,10 @@
 | Smoke test | `scripts/smoke_test.sh` | runs in CI on every PR against the freshly built image |
 | Deploy and rollback | `deploy/deploy.sh` | written, **untested**: there is no host yet |
 
+`/metrics` is blocked at the Caddy proxy (404 from outside) and meant to be scraped from
+inside the network, for example by a Prometheus container on the same compose network
+that targets `api:8000`.
+
 ## What the smoke test proves
 
 It starts the image the way production runs it (`--read-only`, `--cap-drop ALL`,

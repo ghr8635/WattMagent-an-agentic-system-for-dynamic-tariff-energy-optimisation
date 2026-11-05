@@ -10,7 +10,7 @@ import json
 import logging
 import threading
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime, tzinfo
 from pathlib import Path
 from typing import Any, Protocol
@@ -122,9 +122,17 @@ class PlanService:
     llm: Completer | None = None
     engine: str = "simple"
     clock: Callable[[], datetime] = lambda: datetime.now(UTC)
+    _last_fetched: datetime | None = field(default=None, init=False, repr=False)
+
+    def price_age_hours(self) -> float | None:
+        """Age of the prices seen at last use, or None before the first use."""
+        if self._last_fetched is None:
+            return None
+        return max((self.clock() - self._last_fetched).total_seconds() / 3600, 0.0)
 
     def plan(self, text: str, request_id: str) -> tuple[int, dict[str, Any]]:
         ctx = self.provider.get()
+        self._last_fetched = ctx.fetched_at
         resp = run_agent(
             text,
             AgentDeps(ctx, llm=self.llm, audit=self.audit),
@@ -151,6 +159,7 @@ class PlanService:
             ctx = self.provider.get()
         except ServiceUnavailable as exc:
             return [str(exc)]
+        self._last_fetched = ctx.fetched_at
         now = self.clock()
         return check_price_snapshot(
             PriceSnapshot(ctx.prices, ctx.fetched_at),

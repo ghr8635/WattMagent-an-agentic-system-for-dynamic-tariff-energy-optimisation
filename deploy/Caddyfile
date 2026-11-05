@@ -1,4 +1,10 @@
 {$SITE_ADDRESS::80} {
 	encode gzip
-	reverse_proxy api:8000
+	# /metrics is for the monitoring system inside the network, not for the internet.
+	handle /metrics {
+		respond 404
+	}
+	handle {
+		reverse_proxy api:8000
+	}
 }
