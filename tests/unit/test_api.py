@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -175,10 +176,11 @@ def test_metrics_count_auth_failures_replays_and_rate_limits(tmp_path: Path) -> 
 
 
 def test_price_age_gauge_appears_once_prices_were_used(tmp_path: Path) -> None:
+    sample = re.compile(r"^wattmagent_price_age_hours ", re.MULTILINE)  # a value, not HELP/TYPE
     c = client(fresh_service(tmp_path))
-    assert "wattmagent_price_age_hours " not in scrape(c)
+    assert sample.search(scrape(c)) is None
     c.get("/readyz")
-    assert "wattmagent_price_age_hours " in scrape(c)
+    assert sample.search(scrape(c)) is not None
 
 
 def test_server_errors_are_counted_as_500(tmp_path: Path) -> None:
