@@ -29,6 +29,7 @@ class Settings(BaseSettings):
     api_keys: str = ""  # comma-separated; the API refuses to start without one
     rate_limit_per_min: int = 20
     idempotency_ttl_s: int = 86_400
+    plan_ttl_s: int = 129_600  # how long a plan can be replanned (36 h)
     log_format: str = "text"  # "text" or "json" (one JSON object per line)
     log_level: str = "INFO"
     price_source: str = "csv"  # "csv": price_csv below; "smard": live SMARD day-ahead feed

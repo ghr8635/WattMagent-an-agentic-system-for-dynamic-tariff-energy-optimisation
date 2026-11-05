@@ -198,6 +198,13 @@ class ApiMetrics:
                 "Requests answered from the idempotency store.",
             )
         )
+        self.replans = reg(
+            Counter(
+                "wattmagent_replans_total",
+                "Replan requests by outcome: planned, needs_attention, not_found, rejected.",
+                ("outcome",),
+            )
+        )
         self.rate_limited = reg(
             Counter("wattmagent_rate_limited_total", "Requests refused with 429 by the rate limit.")
         )

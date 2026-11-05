@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from datetime import datetime
+from dataclasses import dataclass, field, replace
+from datetime import datetime, timedelta
 from typing import Any
 
+from wattmagent.core.errors import ReplanError
 from wattmagent.core.types import Usage
+from wattmagent.graph.context import window_start_for
 from wattmagent.graph.nodes import AgentDeps, AgentState, make_nodes, new_state
 from wattmagent.graph.runner import run_flow
+from wattmagent.graph.validate import Validated
 from wattmagent.safety.pipeline import SafePlanResult
 
 
@@ -24,6 +27,7 @@ class AgentResponse:
     trace: list[str] = field(default_factory=list)
     usage: Usage = field(default_factory=Usage)
     result: SafePlanResult | None = None
+    validated: Validated | None = None  # the checked request; kept so it can be replanned
 
 
 def run_agent(
@@ -71,4 +75,51 @@ def _response(state: AgentState, usage: Usage) -> AgentResponse:
         trace=trace,
         usage=usage,
         result=result,
+        validated=state.get("validated"),
     )
+
+
+_CURRENT_UNKNOWN = "Current charge unknown"
+
+
+def run_replan(
+    previous: Validated,
+    current_soc: float,
+    deps: AgentDeps,
+    now: datetime,
+    *,
+    request_id: str | None = None,
+) -> AgentResponse:
+    """Plan again from ``now`` for an already validated request.
+
+    The target and the departure time stay as the user gave them; what changes is the
+    car's actual charge, the time that is left, and whatever prices ``deps`` holds now.
+    No text is parsed: the checked request from the first plan is reused, so a replan
+    cannot be steered by new free text. Raises ``ReplanError`` when no plan is possible.
+    """
+    if now.tzinfo is None:
+        raise ValueError("now must be timezone-aware")
+    if not 0.0 <= current_soc <= 1.0:
+        raise ReplanError("the car's charge must be between 0% and 100%", 422)
+    window_start = window_start_for(now)
+    if previous.depart_at < window_start + timedelta(hours=1):
+        raise ReplanError(
+            "there is less than one full hour before the departure time; nothing can be planned"
+        )
+    # A 'not before' time that has passed no longer restricts anything.
+    earliest = (
+        previous.earliest_at
+        if previous.earliest_at and previous.earliest_at > window_start
+        else None
+    )
+    notes = [n for n in previous.notes if not n.startswith(_CURRENT_UNKNOWN)]
+    notes.append(f"Replanned from the car's reported charge of {current_soc * 100:g}%.")
+    validated = replace(previous, current_soc=current_soc, earliest_at=earliest, notes=notes)
+
+    if deps.usage is None:
+        deps.usage = Usage()
+    nodes = make_nodes(deps)
+    state: AgentState = new_state("", now, request_id)
+    state["validated"] = validated
+    state["trace"] = ["replan: from the stored request"]
+    return _response(run_flow(nodes, state, start="plan"), deps.usage)

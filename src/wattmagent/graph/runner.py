@@ -15,8 +15,8 @@ from wattmagent.graph.nodes import END, ENTRY, ROUTES, AgentState, Node
 MAX_STEPS = 12
 
 
-def run_flow(nodes: Mapping[str, Node], state: AgentState) -> AgentState:
-    current = ENTRY
+def run_flow(nodes: Mapping[str, Node], state: AgentState, start: str = ENTRY) -> AgentState:
+    current = start
     for _ in range(MAX_STEPS):
         state.update(nodes[current](state))  # type: ignore[typeddict-item]
         current = ROUTES[current](state)

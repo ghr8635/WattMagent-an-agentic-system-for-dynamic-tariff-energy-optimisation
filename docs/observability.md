@@ -29,6 +29,7 @@ become labels, and each metric ignores new label combinations beyond 1000.
 | `wattmagent_http_request_duration_seconds{route}` | histogram | time to answer, buckets 5 ms to 10 s |
 | `wattmagent_plan_results_total{status,decision}` | counter | `planned` / `needs_input` / `error`, and `optimised` / `fallback` / `none` |
 | `wattmagent_idempotent_replays_total` | counter | answers served from the idempotency store |
+| `wattmagent_replans_total{outcome}` | counter | replans by outcome: `planned`, `needs_attention`, `not_found`, `rejected` |
 | `wattmagent_rate_limited_total` | counter | requests refused with 429 |
 | `wattmagent_auth_failures_total` | counter | requests refused with 401 |
 | `wattmagent_price_age_hours` | gauge | age of the prices at last use, from their fetch time; absent before first use |

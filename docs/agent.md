@@ -86,5 +86,23 @@ parser, so this is a regression guard, not a measure of accuracy on real users' 
 model parser has no real-model evaluation yet (tests use a scripted fake model).
 
 ## Not done yet
-Replanning when conditions change, a conversation memory, execution on devices, and the API
-around `run_agent`.
+Triggering replans by itself (replanning on request exists, see docs/replanning.md and
+docs/api.md), a conversation memory, and execution on devices.
+
+## Language backends
+
+The agent has two interchangeable language backends. The planning, the verifier and the
+fallback are identical for both; only the wording step differs.
+
+| Backend | Selected by | Network | Used for |
+|---|---|---|---|
+| `rules` (default) | nothing, or `--backend rules` / `WATTMAGENT_LANGUAGE_BACKEND=rules` | none | parsing the request, explaining the plan |
+| `llm` | `--backend llm` (or `--llm`) / `WATTMAGENT_LANGUAGE_BACKEND=llm` | model server | the same two steps, with the rules as the fallback |
+
+The deterministic backend does what a model would otherwise do for this narrow task: it
+normalises spoken forms (`eighty percent`, `half past six`, `quarter to seven`, `07.30`,
+`seven in the morning`, `full`, `charge to 80 by 7`) into canonical form and then applies
+the same patterns. It is graded on 40 labelled cases (`python -m wattmagent.graph --eval`,
+also a CI gate). The model backend is kept in the code and is connected last; its result
+is graded with `--llm-eval` on the same cases, and a model is only worth enabling if it
+beats the rules.
