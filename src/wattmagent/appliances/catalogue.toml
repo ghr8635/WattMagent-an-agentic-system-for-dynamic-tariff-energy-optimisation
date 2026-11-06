@@ -1,0 +1,52 @@
+# Ready-made appliances. EVERY NUMBER HERE IS AN ILLUSTRATIVE ASSUMPTION, not a measurement
+# of any product. Replace with your own device's figures for a real household.
+#
+# To add an appliance: add a table below (or put the same table under [catalogue.*] in a
+# household file). No code change is needed.
+
+# ---- shiftable cycles: profile_kw is the average power in each consecutive hour ----------
+
+[cycle.washing_machine]
+description = "Washing machine, 40 C cotton, about 1.4 kWh"
+profile_kw = [0.9, 0.5]
+
+[cycle.dishwasher]
+description = "Dishwasher, eco programme, about 1.05 kWh over three hours"
+profile_kw = [0.55, 0.25, 0.25]
+
+[cycle.tumble_dryer_heat_pump]
+description = "Heat-pump tumble dryer, about 1.9 kWh over three hours"
+profile_kw = [0.7, 0.7, 0.5]
+
+[cycle.tumble_dryer_condenser]
+description = "Condenser tumble dryer, about 3.9 kWh over three hours"
+profile_kw = [1.6, 1.6, 0.7]
+
+# ---- hot-water tanks ---------------------------------------------------------------------
+# draw_shape: 24 relative weights, local clock hour 0..23. daily_draw_kwh is the thermal
+# energy taken out of the tank per day: 4 kWh is about 76 l of water heated from 10 C to
+# 55 C (4 / (0.001163 x 45)), a modest household figure.
+
+[tank.water_heater_200l]
+description = "200 l electric water heater, 3 kW element, band 45-60 C"
+volume_l = 200.0
+power_kw = 3.0
+t_min_c = 45.0
+t_max_c = 60.0
+t_initial_c = 52.0
+ambient_c = 20.0
+loss_kw_per_k = 0.0019
+daily_draw_kwh = 4.0
+draw_shape = [0, 0, 0, 0, 0, 0.5, 3, 4, 2, 1, 0.5, 0.5, 1, 0.5, 0.5, 0.5, 1, 2, 3, 3.5, 2.5, 1.5, 0.5, 0]
+
+[tank.water_heater_80l]
+description = "80 l electric boiler, 2 kW element, band 45-65 C"
+volume_l = 80.0
+power_kw = 2.0
+t_min_c = 45.0
+t_max_c = 65.0
+t_initial_c = 55.0
+ambient_c = 20.0
+loss_kw_per_k = 0.0011
+daily_draw_kwh = 2.0
+draw_shape = [0, 0, 0, 0, 0, 0.5, 3, 4, 2, 1, 0.5, 0.5, 1, 0.5, 0.5, 0.5, 1, 2, 3, 3.5, 2.5, 1.5, 0.5, 0]

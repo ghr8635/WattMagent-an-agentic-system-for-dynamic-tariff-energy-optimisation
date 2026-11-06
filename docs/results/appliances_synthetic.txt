@@ -1,0 +1,10 @@
+# SYNTHETIC prices (seed=0), not market data
+# household: Example flat, time zone Europe/Berlin
+# 3 cycle appliances, hot-water tank: water_heater_200l, connection limit: 11.0 kW
+# cost basis: spot (wholesale) energy price only: no grid fees, taxes or margin; cost = appliance energy only, base load excluded
+# appliance figures are ILLUSTRATIVE ASSUMPTIONS; hot-water use and base load are SYNTHETIC; day-ahead prices are assumed known for the whole day
+strategy            days  cost/day  saved/day  vs base  kWh/day   valid days  fallback
+run_immediately       59    1.7049                        10.35      59/59           0
+cheapest_start        59    1.5234     0.1815   -10.6%    10.35      59/59           0
+milp_optimiser        59    1.4658     0.2391   -14.0%    10.35      59/59           0
+# safety: 59 optimiser plans verified, 0 fallbacks (none)
