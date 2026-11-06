@@ -1,8 +1,9 @@
 # WattMagent: an agentic system for dynamic-tariff energy optimisation
 
 WattMagent plans when a household should use electricity, so flexible loads run in cheap
-hours. Today that means an EV and a home battery on German day-ahead prices; a heat pump,
-solar and forecasting are not built yet. It sits on top of existing dynamic tariffs and home
+hours. Today that means an EV and a home battery, plus washing machine, dryer, dishwasher and
+hot-water tank (separately planned), on German day-ahead prices; a heat pump, solar and
+forecasting are not built yet. It sits on top of existing dynamic tariffs and home
 automation instead of replacing them.
 
 You tell it what you need in plain language ("80% by 7am, not before 22:00"). It returns a
@@ -50,7 +51,8 @@ schedule, checks that schedule independently, and explains it in a few sentences
 | CI: lint, types, tests, secret scan, dependency audit, image build, container smoke test, image scan | green on GitHub Actions |
 | Docker image (non-root, read-only, no capabilities) | built and smoke-tested in CI; **never run on a real host** |
 | Language model backend (Hugging Face / local Ollama) | code and tests done with fakes; **no real model has produced a verified result**. A local 1.5B model answered with garbage, and the free Hugging Face tier has no inference credits |
-| Heat pump model, solar, weather, forecasting | not started |
+| Appliances, slice 1: shiftable cycles (washer, dryer, dishwasher) and a hot-water tank, optimiser + independent verifier + safe fallback, TOML households, extensible catalogue | done, tested, **synthetic-price results only so far**; not yet connected to the agent or API; all appliance figures are assumptions (`docs/appliances.md`) |
+| Heat pump, solar, weather, fixed-load profiles, forecasting | not started |
 | Deployment to a host, rollback, load and failure tests, runbook | `deploy/deploy.sh` is written but untested; the rest not started |
 
 No household savings figure is claimed. See "Results" below and `docs/results.md`.
@@ -91,6 +93,12 @@ curl -s -X POST localhost:8000/v1/plans/<plan_id>/replan \
 
 Settings are environment variables prefixed `WATTMAGENT_`; `.env.example` lists the main ones.
 Details: `docs/api.md`, `docs/replanning.md`, `docs/deploy.md`.
+
+**Appliances (cycles + hot-water tank), described in a TOML file:**
+
+```bash
+python -m wattmagent.appliances --household config/households/example.toml --synthetic --days 60
+```
 
 **Backtest on historical prices:**
 
@@ -134,7 +142,7 @@ battery's extra gain falls from 0.45 to 0.15 EUR/day). All runs, settings and ca
 `docs/architecture.md` (modules and decisions), `docs/optimiser.md`, `docs/safety.md`,
 `docs/agent.md` (language backends), `docs/replanning.md`, `docs/api.md`,
 `docs/observability.md`, `docs/deploy.md`, `docs/data.md`, `docs/tariff.md`,
-`docs/results.md`, `docs/local-models.md`, and the open work in `docs/production-checklist.md`.
+`docs/results.md`, `docs/appliances.md`, `docs/local-models.md`, and the open work in `docs/production-checklist.md`.
 
 ## Data credit
 

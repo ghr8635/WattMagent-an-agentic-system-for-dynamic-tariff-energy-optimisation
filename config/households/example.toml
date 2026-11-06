@@ -1,0 +1,24 @@
+# An example household. The appliance figures come from the shipped catalogue and are
+# ILLUSTRATIVE ASSUMPTIONS, not measurements. Copy this file and edit it for your own home.
+name = "Example flat"
+timezone = "Europe/Berlin"
+max_grid_kw = 11.0            # connection limit for base load plus these appliances
+daily_base_load_kwh = 9.0     # SYNTHETIC base load, only used for the connection limit
+
+[[cycle]]
+appliance = "washing_machine"
+earliest_hour = 8
+deadline_hour = 18            # must be finished by 18:00
+
+[[cycle]]
+appliance = "dishwasher"
+earliest_hour = 19
+deadline_hour = 24            # evening run, done by midnight
+
+[[cycle]]
+appliance = "tumble_dryer_heat_pump"
+earliest_hour = 9
+deadline_hour = 22
+
+[tank]
+appliance = "water_heater_200l"
