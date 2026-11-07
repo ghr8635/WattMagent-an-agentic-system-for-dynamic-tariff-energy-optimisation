@@ -82,3 +82,20 @@ timestamps, rows out of order) rather than guessing. **Unverified:** how SMARD d
 hourly series from 15-minute products (mean assumed), and when exactly the file for a new
 day appears after the day-ahead auction. A recorded real sample is in
 `tests/fixtures/smard_hour_week.json`.
+
+## Weather: Open-Meteo archive (`data/weather.py`)
+
+Hourly outdoor temperature (2 m) and global horizontal shortwave radiation, needed by the heat
+pump and solar models that come next. Source: [Open-Meteo](https://open-meteo.com), data
+licensed **CC BY 4.0** (attribution required). The free tier is for **non-commercial** use, up
+to 10,000 calls a day; a commercial product needs a paid plan or a self-hosted server (AGPLv3).
+
+Checked against a real reply on 2026-11-07 (Berlin, 2025-01-01 to 01-03, saved as
+`tests/fixtures/open_meteo_archive_berlin.json`): UTC timestamps without a zone suffix,
+units `°C` and `W/m²`, one value per hour in parallel arrays. The parser rejects other units,
+non-UTC offsets, gaps in the hours, non-numbers and implausible values; a `null` hour is
+skipped, never filled.
+
+**Not verified:** the forecast endpoint (the archive lags the present, so live use needs it),
+how the archive marks missing hours, and the long-run availability of the free tier. Only
+the archive request has been seen working.

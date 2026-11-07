@@ -1,0 +1,118 @@
+"""Hourly outdoor temperature and solar radiation from Open-Meteo's archive API.
+
+Source: Open-Meteo (https://open-meteo.com), data licensed CC BY 4.0, attribution required.
+The free tier is for non-commercial use (up to 10,000 calls a day); a commercial product
+needs a paid plan or a self-hosted server.
+
+Response layout, as observed on 2026-11-07 (see ``tests/fixtures/open_meteo_archive_berlin.json``
+and docs/data.md). Not an official contract here, so everything is validated and a surprise
+is an error, not a guess:
+
+- request: ``/v1/archive?latitude=..&longitude=..&start_date=..&end_date=..
+  &hourly=temperature_2m,shortwave_radiation&timezone=UTC``
+- reply: ``{"utc_offset_seconds": 0, "timezone": "GMT", "hourly_units": {...},
+  "hourly": {"time": ["2025-01-01T00:00", ...], "temperature_2m": [...],
+  "shortwave_radiation": [...]}}``; timestamps have no zone suffix and are UTC because we
+  ask for ``timezone=UTC``; the values are one per hour.
+
+NOT verified: the forecast endpoint (needed for live use, because the archive lags the
+present), and how the archive marks missing hours (we accept ``null`` and skip the hour).
+"""
+
+from __future__ import annotations
+
+import math
+from dataclasses import dataclass
+from datetime import UTC, date, datetime
+from typing import Any
+
+from wattmagent.core.errors import WattMagentError
+from wattmagent.data.smard_live import JsonFetch, PriceFeedError
+
+ARCHIVE_URL = "https://archive-api.open-meteo.com/v1/archive"
+_TEMP_RANGE_C = (-60.0, 60.0)
+_GHI_MAX_W_M2 = 1500.0  # above the solar constant at the surface: a corrupt value
+
+
+class WeatherFeedError(WattMagentError):
+    """The weather feed could not be read or returned something unexpected."""
+
+
+@dataclass(frozen=True, slots=True)
+class WeatherPoint:
+    start: datetime  # start of the hour, UTC
+    temperature_c: float  # air temperature at 2 m
+    shortwave_w_m2: float  # global horizontal shortwave radiation, hourly mean
+
+
+def archive_url(latitude: float, longitude: float, start: date, end: date) -> str:
+    if not -90 <= latitude <= 90 or not -180 <= longitude <= 180:
+        raise ValueError("latitude must be within +-90 and longitude within +-180")
+    if end < start:
+        raise ValueError("end date is before start date")
+    return (
+        f"{ARCHIVE_URL}?latitude={latitude:.4f}&longitude={longitude:.4f}"
+        f"&start_date={start.isoformat()}&end_date={end.isoformat()}"
+        "&hourly=temperature_2m,shortwave_radiation&timezone=UTC"
+    )
+
+
+def _number(value: object, where: str) -> float | None:
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int | float) or not math.isfinite(value):
+        raise WeatherFeedError(f"{where}: {value!r} is not a number")
+    return float(value)
+
+
+def parse_archive(doc: dict[str, Any]) -> list[WeatherPoint]:
+    """Hourly points, UTC, in order. Hours with a missing value are skipped, not filled."""
+    if doc.get("utc_offset_seconds") != 0:
+        raise WeatherFeedError("expected UTC timestamps (utc_offset_seconds == 0)")
+    units = doc.get("hourly_units")
+    if not isinstance(units, dict):
+        raise WeatherFeedError("'hourly_units' missing")
+    if units.get("temperature_2m") != "°C" or units.get("shortwave_radiation") != "W/m²":
+        raise WeatherFeedError(f"unexpected units: {units!r}")
+    hourly = doc.get("hourly")
+    if not isinstance(hourly, dict):
+        raise WeatherFeedError("'hourly' missing")
+    times, temps, ghis = (hourly.get(k) for k in ("time", "temperature_2m", "shortwave_radiation"))
+    if not (isinstance(times, list) and isinstance(temps, list) and isinstance(ghis, list)):
+        raise WeatherFeedError("hourly arrays missing")
+    if not len(times) == len(temps) == len(ghis):
+        raise WeatherFeedError("hourly arrays differ in length")
+
+    out: list[WeatherPoint] = []
+    previous: datetime | None = None
+    for raw, t_raw, g_raw in zip(times, temps, ghis, strict=True):
+        try:
+            start = datetime.strptime(str(raw), "%Y-%m-%dT%H:%M").replace(tzinfo=UTC)
+        except ValueError as exc:
+            raise WeatherFeedError(f"bad timestamp {raw!r}") from exc
+        if previous is not None and (start - previous).total_seconds() != 3600:
+            raise WeatherFeedError(f"timestamps are not consecutive hours at {raw}")
+        previous = start
+        temp = _number(t_raw, f"temperature at {raw}")
+        ghi = _number(g_raw, f"radiation at {raw}")
+        if temp is None or ghi is None:
+            continue
+        if not _TEMP_RANGE_C[0] <= temp <= _TEMP_RANGE_C[1]:
+            raise WeatherFeedError(f"implausible temperature {temp} C at {raw}")
+        if not 0.0 <= ghi <= _GHI_MAX_W_M2:
+            raise WeatherFeedError(f"implausible radiation {ghi} W/m2 at {raw}")
+        out.append(WeatherPoint(start, temp, ghi))
+    if not out:
+        raise WeatherFeedError("no usable hours in the reply")
+    return out
+
+
+def fetch_archive(
+    fetch: JsonFetch, latitude: float, longitude: float, start: date, end: date
+) -> list[WeatherPoint]:
+    url = archive_url(latitude, longitude, start, end)
+    try:
+        doc = fetch(url)
+    except PriceFeedError as exc:  # the shared HTTP fetcher reports in its own error type
+        raise WeatherFeedError(str(exc)) from exc
+    return parse_archive(doc)
