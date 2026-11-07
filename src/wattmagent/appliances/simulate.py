@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 from collections.abc import Sequence
 
-from wattmagent.appliances.models import AppliancePlan, DayInputs, tank_step
+from wattmagent.appliances.models import AppliancePlan, DayInputs, building_step, tank_step
 
 
 def place(profile: Sequence[float], start: int, slots: int) -> list[float]:
@@ -26,7 +26,24 @@ def appliance_kw(inputs: DayInputs, plan: AppliancePlan) -> list[float]:
             total[t] += series[t]
     for t in range(min(n, len(plan.tank_kw))):
         total[t] += plan.tank_kw[t]
+    for t in range(min(n, len(plan.heatpump_kw))):
+        total[t] += plan.heatpump_kw[t]
     return total
+
+
+def simulate_building(inputs: DayInputs, heatpump_kw: Sequence[float]) -> list[float]:
+    """Indoor temperature at the end of each slot. Empty if the day has no building."""
+    spec = inputs.building
+    if spec is None:
+        return []
+    cop = inputs.cop
+    temp = spec.t_initial_c
+    out: list[float] = []
+    for t in range(inputs.slots):
+        kw = heatpump_kw[t] if t < len(heatpump_kw) else 0.0
+        temp = building_step(spec, temp, kw * cop[t], inputs.outdoor_c[t])
+        out.append(temp)
+    return out
 
 
 def simulate_tank(inputs: DayInputs, tank_kw: Sequence[float]) -> list[float]:

@@ -14,6 +14,9 @@
     appliance = "water_heater_200l"
     daily_draw_kwh = 4.0            # optional overrides of any catalogue value
 
+    [heatpump]
+    appliance = "heat_pump_efficient_house"   # needs outdoor temperatures to be planned
+
     [catalogue.cycle.my_washer]     # optional: add your own appliance
     profile_kw = [1.0, 0.6]
 
@@ -24,7 +27,7 @@ from __future__ import annotations
 
 import tomllib
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -33,16 +36,27 @@ from wattmagent.appliances.catalogue import (
     Catalogue,
     ConfigError,
     CycleModel,
+    HeatPumpModel,
     TankModel,
     default_catalogue,
     parse_catalogue,
     parse_cycle,
+    parse_heatpump,
     parse_tank,
 )
-from wattmagent.appliances.models import CycleJob, CycleSpec, DayInputs, TankSpec
+from wattmagent.appliances.models import BuildingSpec, CycleJob, CycleSpec, DayInputs, TankSpec
 from wattmagent.data.load import synthetic_load_kw
 
-_TOP = {"name", "timezone", "max_grid_kw", "daily_base_load_kwh", "cycle", "tank", "catalogue"}
+_TOP = {
+    "name",
+    "timezone",
+    "max_grid_kw",
+    "daily_base_load_kwh",
+    "cycle",
+    "tank",
+    "heatpump",
+    "catalogue",
+}
 _CYCLE_ENTRY = {"appliance", "name", "earliest_hour", "deadline_hour", "profile_kw", "description"}
 
 
@@ -62,6 +76,7 @@ class Household:
     daily_base_load_kwh: float = 0.0
     cycles: tuple[CycleEntry, ...] = ()
     tank: TankModel | None = None
+    heatpump: HeatPumpModel | None = None
     notes: list[str] = field(default_factory=list)
 
 
@@ -141,6 +156,24 @@ def parse_household(raw: Mapping[str, Any], catalogue: Catalogue | None = None) 
         tank = parse_tank(key, merged_t)
         _validate_tank(tank)
 
+    heatpump: HeatPumpModel | None = None
+    hp_table = raw.get("heatpump")
+    if hp_table is not None:
+        if not isinstance(hp_table, Mapping):
+            raise ConfigError("heatpump: expected a table")
+        hp_key = hp_table.get("appliance")
+        if not isinstance(hp_key, str) or hp_key not in cat.heatpumps:
+            known = ", ".join(sorted(cat.heatpumps))
+            raise ConfigError(f"heatpump: unknown appliance {hp_key!r}; known heat pumps: {known}")
+        hp = cat.heatpumps[hp_key]
+        merged_h: dict[str, Any] = {k: v for k, v in asdict(hp).items() if k != "key"}
+        merged_h.update({k: v for k, v in hp_table.items() if k != "appliance"})
+        heatpump = parse_heatpump(hp_key, merged_h)
+        try:
+            building_spec(heatpump)
+        except ValueError as exc:
+            raise ConfigError(f"heatpump: {exc}") from exc
+
     return Household(
         name=str(raw.get("name", "household")),
         timezone=tz,
@@ -148,6 +181,7 @@ def parse_household(raw: Mapping[str, Any], catalogue: Catalogue | None = None) 
         daily_base_load_kwh=float(base),
         cycles=tuple(entries),
         tank=tank,
+        heatpump=heatpump,
     )
 
 
@@ -173,6 +207,22 @@ def tank_spec(m: TankModel) -> TankSpec:
     )
 
 
+def building_spec(m: HeatPumpModel) -> BuildingSpec:
+    return BuildingSpec(
+        name=m.key,
+        heat_capacity_kwh_per_k=m.heat_capacity_kwh_per_k,
+        ua_kw_per_k=m.ua_kw_per_k,
+        max_heat_kw=m.max_heat_kw,
+        t_min_c=m.t_min_c,
+        t_max_c=m.t_max_c,
+        t_initial_c=m.t_initial_c,
+        cop_at_7c=m.cop_at_7c,
+        cop_slope_per_k=m.cop_slope_per_k,
+        cop_min=m.cop_min,
+        cop_max=m.cop_max,
+    )
+
+
 def load_household(path: Path, catalogue: Catalogue | None = None) -> Household:
     try:
         raw = tomllib.loads(path.read_text(encoding="utf-8"))
@@ -193,9 +243,17 @@ def _window_slots(hours: Sequence[int], earliest: int, deadline: int) -> tuple[i
 
 
 def build_day_inputs(
-    household: Household, prices: Sequence[float], local_hours: Sequence[int]
+    household: Household,
+    prices: Sequence[float],
+    local_hours: Sequence[int],
+    outdoor_c: Sequence[float] | None = None,
 ) -> DayInputs:
-    """A planning day for ``household``. ``local_hours[t]`` is slot ``t``'s local clock hour."""
+    """A planning day for ``household``. ``local_hours[t]`` is slot ``t``'s local clock hour.
+
+    The heat pump is part of the day only when ``outdoor_c`` (one temperature per slot) is
+    given: without weather there is nothing to plan it against. Pass ``None`` for a day
+    with no heating need.
+    """
     if len(prices) != len(local_hours):
         raise ValueError("prices and local_hours must have the same length")
     jobs: list[CycleJob] = []
@@ -217,6 +275,11 @@ def build_day_inputs(
         if household.daily_base_load_kwh > 0
         else []
     )
+    building: BuildingSpec | None = None
+    if household.heatpump is not None and outdoor_c is not None:
+        if len(outdoor_c) != len(prices):
+            raise ValueError("outdoor_c and prices must have the same length")
+        building = building_spec(household.heatpump)
     return DayInputs(
         prices=list(prices),
         jobs=jobs,
@@ -224,4 +287,6 @@ def build_day_inputs(
         tank_draw_kwh=draws,
         base_load_kw=base,
         max_grid_kw=household.max_grid_kw,
+        building=building,
+        outdoor_c=list(outdoor_c) if building is not None and outdoor_c is not None else (),
     )

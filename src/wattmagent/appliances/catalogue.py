@@ -47,9 +47,26 @@ class CycleModel:
 
 
 @dataclass(frozen=True, slots=True)
+class HeatPumpModel:
+    key: str
+    description: str
+    heat_capacity_kwh_per_k: float
+    ua_kw_per_k: float
+    max_heat_kw: float
+    t_min_c: float
+    t_max_c: float
+    t_initial_c: float
+    cop_at_7c: float
+    cop_slope_per_k: float
+    cop_min: float
+    cop_max: float
+
+
+@dataclass(frozen=True, slots=True)
 class Catalogue:
     cycles: dict[str, CycleModel] = field(default_factory=dict)
     tanks: dict[str, TankModel] = field(default_factory=dict)
+    heatpumps: dict[str, HeatPumpModel] = field(default_factory=dict)
 
 
 _CYCLE_KEYS = {"description", "profile_kw"}
@@ -63,6 +80,17 @@ _TANK_REQUIRED = {
     "draw_shape",
 }
 _TANK_OPTIONAL = {"description", "ambient_c", "loss_kw_per_k", "efficiency", "modulating"}
+
+
+_HP_REQUIRED = {
+    "heat_capacity_kwh_per_k",
+    "ua_kw_per_k",
+    "max_heat_kw",
+    "t_min_c",
+    "t_max_c",
+    "t_initial_c",
+}
+_HP_OPTIONAL = {"description", "cop_at_7c", "cop_slope_per_k", "cop_min", "cop_max"}
 
 
 def _numbers(where: str, value: Any, count: int | None = None) -> tuple[float, ...]:
@@ -133,11 +161,38 @@ def parse_tank(key: str, table: Mapping[str, Any]) -> TankModel:
     )
 
 
+def parse_heatpump(key: str, table: Mapping[str, Any]) -> HeatPumpModel:
+    where = f"heatpump.{key}"
+    _check_keys(where, table, _HP_REQUIRED | _HP_OPTIONAL)
+    missing = sorted(_HP_REQUIRED - set(table))
+    if missing:
+        raise ConfigError(f"{where}: missing {', '.join(missing)}")
+
+    def num(name: str, default: float | None = None) -> float:
+        return _num(f"{where}.{name}", table.get(name, default))
+
+    return HeatPumpModel(
+        key=key,
+        description=str(table.get("description", "")),
+        heat_capacity_kwh_per_k=num("heat_capacity_kwh_per_k"),
+        ua_kw_per_k=num("ua_kw_per_k"),
+        max_heat_kw=num("max_heat_kw"),
+        t_min_c=num("t_min_c"),
+        t_max_c=num("t_max_c"),
+        t_initial_c=num("t_initial_c"),
+        cop_at_7c=num("cop_at_7c", 3.5),
+        cop_slope_per_k=num("cop_slope_per_k", 0.07),
+        cop_min=num("cop_min", 1.8),
+        cop_max=num("cop_max", 5.0),
+    )
+
+
 def parse_catalogue(raw: Mapping[str, Any], base: Catalogue | None = None) -> Catalogue:
     """Entries in ``raw`` (``{"cycle": {...}, "tank": {...}}``) added to or replacing ``base``."""
-    _check_keys("catalogue", raw, {"cycle", "tank"})
+    _check_keys("catalogue", raw, {"cycle", "tank", "heatpump"})
     cycles = dict(base.cycles) if base else {}
     tanks = dict(base.tanks) if base else {}
+    heatpumps = dict(base.heatpumps) if base else {}
     for key, table in (raw.get("cycle") or {}).items():
         if not isinstance(table, Mapping):
             raise ConfigError(f"cycle.{key}: expected a table")
@@ -146,7 +201,11 @@ def parse_catalogue(raw: Mapping[str, Any], base: Catalogue | None = None) -> Ca
         if not isinstance(table, Mapping):
             raise ConfigError(f"tank.{key}: expected a table")
         tanks[key] = parse_tank(key, table)
-    return Catalogue(cycles, tanks)
+    for key, table in (raw.get("heatpump") or {}).items():
+        if not isinstance(table, Mapping):
+            raise ConfigError(f"heatpump.{key}: expected a table")
+        heatpumps[key] = parse_heatpump(key, table)
+    return Catalogue(cycles, tanks, heatpumps)
 
 
 def default_catalogue() -> Catalogue:

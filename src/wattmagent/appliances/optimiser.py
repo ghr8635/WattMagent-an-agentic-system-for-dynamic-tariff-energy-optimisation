@@ -5,6 +5,7 @@ Unknowns
 - ``y[j, s]``  1 if cycle job ``j`` starts in slot ``s`` (binary; one start per job)
 - ``z[t]``     element duty in slot ``t`` (binary for an on/off element, 0..1 if modulating)
 - ``T[t]``     tank temperature at the end of slot ``t`` (inside the comfort band)
+- ``Q[t]``, ``Tb[t]``  heat-pump heat (thermal kW, 0..max) and indoor temperature (comfort band)
 
 Model
 
@@ -14,8 +15,11 @@ Model
                T[last] >= T_initial                                      (no free heat from the end)
                base[t] + cycle power[t] + P z[t] <= max_grid_kw          (if a limit is set)
 
-with ``a = 1 - loss / C`` and ``C`` the tank heat capacity. A cycle is one block of ``y``,
-so it cannot be paused or split: that is what "shiftable cycle" means. Base load is a
+    Tb[t] = (1 - UA/Cb) Tb[t-1] + Q[t]/Cb + UA T_out[t]/Cb,  cost price[t] * Q[t] / COP[t]
+
+(COP depends on the known outdoor temperature, so this stays linear; the heat-pump part is a
+plain LP). With ``a = 1 - loss / C`` and ``C`` the tank heat capacity. A cycle is one block
+of ``y``, so it cannot be paused or split: that is what "shiftable cycle" means. Base load is a
 constant and does not enter the cost; it matters only for the connection limit.
 """
 
@@ -50,6 +54,12 @@ def plan_appliances(inputs: DayInputs) -> AppliancePlan:
     z0 = n_y
     t0 = z0 + n
     nv = n_y + (2 * n if tank else 0)
+    building = inputs.building
+    cop = inputs.cop
+    q0 = nv  # heat-pump thermal power (n), then indoor temperature (n)
+    b0 = q0 + n
+    if building is not None:
+        nv += 2 * n
     if nv == 0:
         return AppliancePlan(PlanStatus.OPTIMAL, planned_cost_eur=0.0)
 
@@ -61,6 +71,13 @@ def plan_appliances(inputs: DayInputs) -> AppliancePlan:
     for k, (j, s) in enumerate(y_cols):
         profile = inputs.jobs[j].spec.profile_kw
         cost[k] = float(np.dot(prices[s : s + len(profile)], profile))
+
+    if building is not None:
+        cost[q0 : q0 + n] = prices / np.asarray(cop)
+        ub[q0 : q0 + n] = building.max_heat_kw
+        lb[b0 : b0 + n] = building.t_min_c
+        ub[b0 : b0 + n] = building.t_max_c
+        lb[b0 + n - 1] = max(building.t_min_c, building.t_initial_c)
 
     eq_rows: list[np.ndarray] = []
     eq_rhs: list[float] = []
@@ -97,6 +114,21 @@ def plan_appliances(inputs: DayInputs) -> AppliancePlan:
             eq_rows.append(row)
             eq_rhs.append(rhs)
 
+    if building is not None:
+        c_b = building.heat_capacity_kwh_per_k
+        a_b = 1.0 - building.ua_kw_per_k / c_b
+        for t in range(n):
+            row = np.zeros(nv)
+            row[b0 + t] = 1.0
+            if t > 0:
+                row[b0 + t - 1] = -a_b
+            row[q0 + t] = -1.0 / c_b
+            rhs = building.ua_kw_per_k * inputs.outdoor_c[t] / c_b
+            if t == 0:
+                rhs += a_b * building.t_initial_c
+            eq_rows.append(row)
+            eq_rhs.append(rhs)
+
     if inputs.max_grid_kw is not None:
         base = inputs.base_kw
         for t in range(n):
@@ -108,6 +140,8 @@ def plan_appliances(inputs: DayInputs) -> AppliancePlan:
                     row[k] = profile[i]
             if tank is not None:
                 row[z0 + t] = p_tank
+            if building is not None:
+                row[q0 + t] = 1.0 / cop[t]
             ub_rows.append(row)
             ub_rhs.append(inputs.max_grid_kw - base[t])
 
@@ -147,4 +181,10 @@ def plan_appliances(inputs: DayInputs) -> AppliancePlan:
         if not tank.modulating:
             duty = np.round(duty)
         tank_kw = [0.0 if abs(float(d)) < _NOISE else float(d) * p_tank for d in duty]
-    return AppliancePlan(PlanStatus.OPTIMAL, cycle_kw, tank_kw, planned_cost_eur=float(res.fun))
+    heatpump_kw: list[float] = []
+    if building is not None:
+        heat = np.clip(sol[q0 : q0 + n], 0.0, building.max_heat_kw)
+        heatpump_kw = [0.0 if h < _NOISE else float(h) / cop[t] for t, h in enumerate(heat)]
+    return AppliancePlan(
+        PlanStatus.OPTIMAL, cycle_kw, tank_kw, heatpump_kw, planned_cost_eur=float(res.fun)
+    )

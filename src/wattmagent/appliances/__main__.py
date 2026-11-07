@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import argparse
+import json
 from collections import Counter
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -15,6 +16,13 @@ from wattmagent.appliances.backtest import (
 )
 from wattmagent.appliances.household import load_household
 from wattmagent.data.prices import load_csv, synthetic_prices
+from wattmagent.data.smard_live import HttpxFetch
+from wattmagent.data.weather import (
+    fetch_archive,
+    parse_archive,
+    synthetic_weather,
+    temperature_by_hour,
+)
 from wattmagent.safety.audit import InMemoryAuditLog, JsonlAuditLog
 from wattmagent.tariff.tariff import apply_tariff, load_tariff
 
@@ -28,6 +36,14 @@ def main() -> None:
     p.add_argument("--days", type=int, default=60, help="synthetic only")
     p.add_argument("--seed", type=int, default=0, help="synthetic only")
     p.add_argument("--tariff", type=Path, help="TOML tariff; without it spot prices are used")
+    wx = p.add_mutually_exclusive_group()
+    wx.add_argument(
+        "--weather-json", type=Path, help="saved Open-Meteo archive reply (see docs/data.md)"
+    )
+    wx.add_argument(
+        "--latitude", type=float, help="fetch Open-Meteo archive weather (needs --longitude)"
+    )
+    p.add_argument("--longitude", type=float)
     p.add_argument("--audit-log", type=Path, help="write one JSON line per optimiser decision")
     args = p.parse_args()
 
@@ -40,6 +56,25 @@ def main() -> None:
         prices = synthetic_prices(datetime(2025, 1, 1, tzinfo=tz), args.days, args.seed)
         label = f"SYNTHETIC prices (seed={args.seed}), not market data"
         tz = ZoneInfo(household.timezone)
+
+    outdoor = None
+    weather_label = ""
+    if household.heatpump is not None:
+        if args.weather_json:
+            points = parse_archive(json.loads(args.weather_json.read_text(encoding="utf-8")))
+            weather_label = f"weather file: {args.weather_json.name} (Open-Meteo, CC BY 4.0)"
+        elif args.latitude is not None and args.longitude is not None:
+            first = prices[0].start.astimezone(UTC).date()
+            last = prices[-1].start.astimezone(UTC).date()
+            points = fetch_archive(HttpxFetch(), args.latitude, args.longitude, first, last)
+            weather_label = "weather: Open-Meteo archive (CC BY 4.0), fetched now"
+        elif args.synthetic:
+            begin = prices[0].start.astimezone(UTC) - timedelta(days=1)  # margin for time zones
+            points = synthetic_weather(begin, args.days + 3, args.seed)
+            weather_label = f"SYNTHETIC weather (seed={args.seed}), not measurements"
+        else:
+            p.error("this household has a heat pump: give --weather-json or --latitude/--longitude")
+        outdoor = temperature_by_hour(points)
 
     banner = ""
     if args.tariff:
@@ -55,8 +90,11 @@ def main() -> None:
     print(
         f"# {len(household.cycles)} cycle appliances, hot-water tank: "
         f"{household.tank.key if household.tank else 'none'}, "
+        f"heat pump: {household.heatpump.key if household.heatpump else 'none'}, "
         f"connection limit: {household.max_grid_kw or 'none'} kW"
     )
+    if weather_label:
+        print(f"# {weather_label}; heat pump = building mass as heat storage (assumed figures)")
     print(f"# cost basis: {basis}; cost = appliance energy only, base load excluded")
     print(
         "# appliance figures are ILLUSTRATIVE ASSUMPTIONS; hot-water use and base load are "
@@ -65,7 +103,9 @@ def main() -> None:
     if banner:
         print(banner)
     audit = InMemoryAuditLog()
-    results = run_appliance_backtest(prices, household, default_planners(audit), tz=tz)
+    results = run_appliance_backtest(
+        prices, household, default_planners(audit), tz=tz, outdoor=outdoor
+    )
     print(format_summary(results, baseline="run_immediately"))
     fallbacks = [e for e in audit.entries if e["decision"] == "fallback"]
     reasons = Counter(r.split(":")[0] for e in fallbacks for r in e["reasons"])

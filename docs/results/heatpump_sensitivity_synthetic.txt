@@ -1,0 +1,10 @@
+# SYNTHETIC prices and weather (seed=0), not market or weather data
+# heat pump only matters on heating days (daily mean outdoor <= 15 C)
+# thermal mass is an ASSUMPTION; spot prices; cost = appliance energy only
+# columns show the HEAT PUMP'S OWN cost per day: household with pump minus the same
+# household without it, so cycle and tank savings do not flatter the pump
+ C kWh/K  immediate  thrifty  optimiser  vs imm  vs thrifty
+     3.0      2.215    2.187      1.860  -16.0%      -15.0%
+     5.0      2.215    2.204      1.770  -20.1%      -19.7%
+    10.0      2.215    2.246      1.720  -22.3%      -23.4%
+    20.0      2.215    2.393      1.668  -24.7%      -30.3%

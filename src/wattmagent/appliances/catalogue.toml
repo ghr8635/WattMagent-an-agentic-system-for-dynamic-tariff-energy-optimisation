@@ -50,3 +50,34 @@ ambient_c = 20.0
 loss_kw_per_k = 0.0011
 daily_draw_kwh = 2.0
 draw_shape = [0, 0, 0, 0, 0, 0.5, 3, 4, 2, 1, 0.5, 0.5, 1, 0.5, 0.5, 0.5, 1, 2, 3, 3.5, 2.5, 1.5, 0.5, 0]
+
+# ---- heat pumps (air-to-water) heating a building that stores heat in its mass ------------
+# heat_capacity_kwh_per_k and ua_kw_per_k describe the BUILDING and are the biggest
+# uncertainty in any result: change them and the optimiser's gain changes a lot.
+# COP = cop_at_7c + cop_slope_per_k * (outdoor - 7), clipped to [cop_min, cop_max].
+
+[heatpump.heat_pump_efficient_house]
+description = "Air heat pump, well-insulated house: UA 0.12 kW/K, 10 kWh/K, 6 kW heat, band 20-22 C"
+heat_capacity_kwh_per_k = 10.0
+ua_kw_per_k = 0.12
+max_heat_kw = 6.0
+t_min_c = 20.0
+t_max_c = 22.0
+t_initial_c = 21.0
+cop_at_7c = 3.5
+cop_slope_per_k = 0.07
+cop_min = 1.8
+cop_max = 5.0
+
+[heatpump.heat_pump_older_house]
+description = "Air heat pump, older house: UA 0.25 kW/K, 15 kWh/K, 10 kW heat, band 20-22 C"
+heat_capacity_kwh_per_k = 15.0
+ua_kw_per_k = 0.25
+max_heat_kw = 10.0
+t_min_c = 20.0
+t_max_c = 22.0
+t_initial_c = 21.0
+cop_at_7c = 3.2
+cop_slope_per_k = 0.07
+cop_min = 1.8
+cop_max = 4.8
