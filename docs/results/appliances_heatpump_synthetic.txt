@@ -1,0 +1,11 @@
+# SYNTHETIC prices (seed=0), not market data
+# household: Example house with heat pump, time zone Europe/Berlin
+# 2 cycle appliances, hot-water tank: water_heater_200l, heat pump: heat_pump_efficient_house, connection limit: 14.0 kW
+# SYNTHETIC weather (seed=0), not measurements; heat pump = building mass as heat storage (assumed figures)
+# cost basis: spot (wholesale) energy price only: no grid fees, taxes or margin; cost = appliance energy only, base load excluded
+# appliance figures are ILLUSTRATIVE ASSUMPTIONS; hot-water use and base load are SYNTHETIC; day-ahead prices are assumed known for the whole day
+strategy            days  cost/day  saved/day  vs base  kWh/day   valid days  fallback  heating
+run_immediately       59    3.6561                        25.92      59/59           0       59
+cheapest_start        59    3.5629     0.0933    -2.6%    25.50      59/59           0       59
+milp_optimiser        59    2.9790     0.6772   -18.5%    26.12      59/59           0       59
+# safety: 59 optimiser plans verified, 0 fallbacks (none)

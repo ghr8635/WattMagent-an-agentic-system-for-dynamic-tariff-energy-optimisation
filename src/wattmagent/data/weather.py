@@ -22,8 +22,10 @@ present), and how the archive marks missing hours (we accept ``null`` and skip t
 from __future__ import annotations
 
 import math
+import random
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 from wattmagent.core.errors import WattMagentError
@@ -116,3 +118,35 @@ def fetch_archive(
     except PriceFeedError as exc:  # the shared HTTP fetcher reports in its own error type
         raise WeatherFeedError(str(exc)) from exc
     return parse_archive(doc)
+
+
+def temperature_by_hour(points: Sequence[WeatherPoint]) -> Mapping[datetime, float]:
+    """Outdoor temperature keyed by the UTC start of the hour."""
+    return {p.start: p.temperature_c for p in points}
+
+
+def synthetic_weather(start: datetime, days: int, seed: int) -> list[WeatherPoint]:
+    """Plausible German hourly weather: a yearly and a daily temperature cycle, noise, and a
+    radiation curve that follows the sun and the season. Deterministic for (start, days, seed).
+    NOT measured data. ``start`` is taken as UTC.
+    """
+    if days <= 0:
+        raise ValueError("days must be positive")
+    rng = random.Random(seed)  # noqa: S311  (simulation, not crypto)
+    first = datetime(start.year, start.month, start.day, tzinfo=UTC)
+    out: list[WeatherPoint] = []
+    drift = 0.0
+    cloud = 0.6
+    for i in range(days * 24):
+        t = first + timedelta(hours=i)
+        doy = t.timetuple().tm_yday
+        season = math.sin(2 * math.pi * (doy - 110) / 365)  # +1 midsummer, -1 midwinter
+        if i % 24 == 0:
+            drift = 0.8 * drift + rng.gauss(0.0, 2.0)  # slow weather-system wandering
+            cloud = min(1.0, max(0.1, cloud + rng.gauss(0.0, 0.25)))
+        daily = math.sin(2 * math.pi * (t.hour - 9) / 24)
+        temp = 9.5 + 9.0 * season + (2.0 + 1.5 * season) * daily + drift
+        sun = max(0.0, math.sin(math.pi * (t.hour - 5.5) / 13.0)) if 5 <= t.hour <= 18 else 0.0
+        ghi = sun * (250.0 + 450.0 * (season + 1) / 2) * cloud
+        out.append(WeatherPoint(t, round(temp, 2), round(ghi, 1)))
+    return out

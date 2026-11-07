@@ -4,6 +4,8 @@ Like the EV verifier, this does not look inside the optimiser. It re-derives wha
 does from the plan's own power series and the physical tank model, then checks hard rules:
 
 - every cycle appears, once, as exactly its profile, without a pause, inside its window;
+- heat pump within its electric limit at each hour's COP; indoor temperature inside the band
+  and not colder at the end;
 - tank power within limits (and either off or full if the element does not modulate);
 - tank temperature inside the comfort band in every slot, and not colder at the end;
 - base load plus appliances within the connection limit;
@@ -18,7 +20,13 @@ from enum import StrEnum
 
 from wattmagent.appliances.baselines import run_immediately
 from wattmagent.appliances.models import AppliancePlan, CycleJob, DayInputs
-from wattmagent.appliances.simulate import appliance_kw, cost_eur, place, simulate_tank
+from wattmagent.appliances.simulate import (
+    appliance_kw,
+    cost_eur,
+    place,
+    simulate_building,
+    simulate_tank,
+)
 
 _POWER_TOL_KW = 1e-6
 _TEMP_TOL_K = 1e-3
@@ -35,12 +43,22 @@ class ApplianceRule(StrEnum):
     TANK_POWER = "tank_power"
     TANK_COMFORT = "tank_comfort"
     TANK_END = "tank_end"
+    HEATPUMP_POWER = "heatpump_power"
+    INDOOR_COMFORT = "indoor_comfort"
+    INDOOR_END = "indoor_end"
     GRID_LIMIT = "grid_limit"
     COST = "cost_vs_baseline"
 
 
 # Rules about the request being out of reach rather than the plan being unsafe.
-REQUEST_RULES = frozenset({ApplianceRule.TANK_COMFORT, ApplianceRule.TANK_END})
+REQUEST_RULES = frozenset(
+    {
+        ApplianceRule.TANK_COMFORT,
+        ApplianceRule.TANK_END,
+        ApplianceRule.INDOOR_COMFORT,
+        ApplianceRule.INDOOR_END,
+    }
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -105,7 +123,13 @@ def _hard_checks(inputs: DayInputs, plan: AppliancePlan) -> list[ApplianceViolat
         return [ApplianceViolation(ApplianceRule.SHAPE, "tank series has the wrong length")]
     if inputs.tank is None and any(abs(v) > _POWER_TOL_KW for v in plan.tank_kw):
         return [ApplianceViolation(ApplianceRule.SHAPE, "tank power but no tank")]
-    everything = [v for s in plan.cycle_kw.values() for v in s] + list(plan.tank_kw)
+    if inputs.building is not None and len(plan.heatpump_kw) != n:
+        return [ApplianceViolation(ApplianceRule.SHAPE, "heat-pump series has the wrong length")]
+    if inputs.building is None and any(abs(v) > _POWER_TOL_KW for v in plan.heatpump_kw):
+        return [ApplianceViolation(ApplianceRule.SHAPE, "heat-pump power but no building")]
+    everything = (
+        [v for s in plan.cycle_kw.values() for v in s] + list(plan.tank_kw) + list(plan.heatpump_kw)
+    )
     if not all(math.isfinite(v) for v in everything):
         return [ApplianceViolation(ApplianceRule.NOT_FINITE, "plan contains NaN or infinity")]
 
@@ -142,6 +166,38 @@ def _hard_checks(inputs: DayInputs, plan: AppliancePlan) -> list[ApplianceViolat
                 ApplianceViolation(
                     ApplianceRule.TANK_END,
                     f"tank ends at {temps[-1]:.1f} C, colder than the start {tank.t_initial_c:g} C",
+                )
+            )
+
+    building = inputs.building
+    if building is not None:
+        cop = inputs.cop
+        for t, kw in enumerate(plan.heatpump_kw):
+            limit = building.max_heat_kw / cop[t]
+            if kw < -_POWER_TOL_KW or kw > limit + _POWER_TOL_KW:
+                found.append(
+                    ApplianceViolation(
+                        ApplianceRule.HEATPUMP_POWER,
+                        f"heat pump {kw:.3f} kW outside 0..{limit:.3f} kW",
+                        t,
+                    )
+                )
+        indoor = simulate_building(inputs, plan.heatpump_kw)
+        for t, temp in enumerate(indoor):
+            if temp < building.t_min_c - _TEMP_TOL_K or temp > building.t_max_c + _TEMP_TOL_K:
+                found.append(
+                    ApplianceViolation(
+                        ApplianceRule.INDOOR_COMFORT,
+                        f"indoor {temp:.1f} C, band {building.t_min_c:g}-{building.t_max_c:g} C",
+                        t,
+                    )
+                )
+        if indoor and indoor[-1] < building.t_initial_c - _TEMP_TOL_K:
+            found.append(
+                ApplianceViolation(
+                    ApplianceRule.INDOOR_END,
+                    f"indoor ends at {indoor[-1]:.1f} C, colder than the start "
+                    f"{building.t_initial_c:g} C",
                 )
             )
 

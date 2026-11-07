@@ -1,6 +1,6 @@
 # Appliances: shiftable cycles and the hot-water tank
 
-Status: **slice 1**. Two behaviour classes, one optimiser, one independent verifier, a TOML
+Status: **slice 2**. Three behaviour classes, one optimiser, one independent verifier, a TOML
 household file and a small extensible catalogue. It is **not yet connected to the agent or the
 API**, and it is planned separately from the EV and battery (see "Limits").
 
@@ -11,7 +11,7 @@ API**, and it is planned separately from the EV and battery (see "Limits").
 | Interruptible, power-flexible | EV, home battery | MILP in `optimiser/household.py` | done earlier |
 | **Shiftable cycle** | washing machine, dryer, dishwasher | fixed hourly power profile, runs once, no pause, inside a window | **done** |
 | **Thermal store with a comfort band** | electric water heater | one-node tank, temperature band, on/off or modulating element | **done** |
-| Thermal store, building mass | heat pump, electric heating, AC | same family, larger and weather-driven | not started |
+| **Thermal store, building mass** | air heat pump | one-node building, comfort band, COP from the outdoor temperature | **done** (heat pump; resistive heating and AC not started) |
 | Generation | rooftop PV | needs a weather source (not yet verified) | not started |
 | Fixed loads | fridge, cooking, lighting, TV, standby | demand profile, never scheduled | not started |
 
@@ -32,6 +32,44 @@ API**, and it is planned separately from the EV and battery (see "Limits").
   refuse (`PlanRejected`) if even that breaks a hard limit; one audit record per call. The audit
   record holds counts and a fingerprint only, never appliance names.
 - `household.py`, `catalogue.py`, `catalogue.toml`: the household file and the catalogue.
+
+## The heat pump
+
+The building is one heat store: `C dT/dt = Q - UA (T - T_out)`, with the pump delivering heat `Q`
+between 0 and its maximum and drawing `Q / COP` of electricity. The COP is a straight line in the
+outdoor temperature (`cop_at_7c`, `cop_slope_per_k`, clipped), and the outdoor temperature is
+known in advance (a weather file or the Open-Meteo archive, see `docs/data.md`), so the whole
+thing stays linear: the heat-pump part of the optimiser is a plain LP.
+
+- The room must stay inside a comfort band (20-22 C in the catalogue) and end the day no colder
+  than it started.
+- The model **cannot cool**. A day whose mean outdoor temperature is above 15 C is treated as
+  having no heating need and the pump is left out of that day's plan.
+- **Two rule baselines.** `run_immediately` holds the start temperature. `cheapest_start`
+  (named for its cycles) holds the lower quarter of the band, a *thrifty* thermostat. A colder
+  house loses less heat, so an optimiser that lets the house drift down wins partly by running
+  cooler. Judge the gain against the thrifty baseline.
+- A heat pump needs weather, so `build_day_inputs` takes `outdoor_c` and the backtest needs an
+  `outdoor` map; `python -m wattmagent.appliances` takes `--weather-json` (a saved Open-Meteo reply)
+  or `--latitude/--longitude` (fetches the archive), or uses clearly labelled synthetic weather
+  with `--synthetic`.
+
+### How much it depends on the building
+
+The building's thermal mass is the biggest unknown and moves the answer a lot.
+`docs/results/heatpump_sensitivity_synthetic.txt` (made by `scripts/heatpump_sensitivity.py`,
+**synthetic prices and weather**) shows the pump's *own* cost per day, so cycle and tank savings
+do not flatter it:
+
+| C (kWh/K) | immediate | thrifty | optimiser | optimiser vs thrifty |
+|---|---|---|---|---|
+| 3 | 2.215 | 2.187 | 1.860 | -15.0% |
+| 5 | 2.215 | 2.204 | 1.770 | -19.7% |
+| 10 | 2.215 | 2.246 | 1.720 | -23.4% |
+| 20 | 2.215 | 2.393 | 1.668 | -30.3% |
+
+Read it as "the gain grows with the assumed thermal mass", not as a forecast. It is also
+helped by perfect foresight of prices and weather, which a real system would not have.
 
 ## Describing a household
 
@@ -61,7 +99,7 @@ python -m wattmagent.appliances --household config/households/example.toml \
 python -m wattmagent.appliances --household config/households/example.toml --synthetic --days 60
 ```
 
-`docs/results/appliances_synthetic.txt` is a **synthetic-price** run (labelled in its header). A
+`docs/results/appliances_synthetic.txt` and `appliances_heatpump_synthetic.txt` are **synthetic** runs (labelled in its header). A
 run on the real SMARD series is done on your machine and is not recorded here yet.
 
 ## What the tests establish
@@ -70,6 +108,10 @@ run on the real SMARD series is done on your machine and is not recorded here ye
   days, and its cost equals the independent simulation's.
 - A tank plan stays in the band, ends no colder than it began, and never costs more than the
   thermostat, on 25 random days; a modulating element never costs more than an on/off one.
+- Heat pump: the optimiser's plan is valid, its cost equals the independent simulation, and no
+  random feasible schedule (300 per day, several days) is cheaper; a pump with too little power
+  and a hot day are reported infeasible; the verifier flags an over-limit, frozen, overheated or
+  end-cold house and a pump that breaks the connection limit.
 - The verifier flags each of 18 deliberately broken plans: shifted, split, scaled, doubled or
   missing cycles, wrong shapes, NaN, overheated or frozen tank, partial power on an on/off
   element, a breached connection limit, a plan dearer than the baseline.
@@ -81,8 +123,11 @@ run on the real SMARD series is done on your machine and is not recorded here ye
 
 - **Every appliance figure is an assumption**, not a measurement of any product.
 - **Hourly slots.** A two-hour wash is two averaged hours; real programmes vary within the hour.
-- **Planned separately from the EV and battery.** The base load only enters through the
-  connection limit; a battery could shift appliance energy further, and that is not modelled.
+- **Planned separately from the EV and battery.** The EV and battery are not part of
+  `DayInputs`, so nothing here shares a connection limit with them, and a battery could shift
+  appliance energy further. The base load enters only through the connection limit.
+- **One-node building.** No separate rooms, walls or floor heating, no solar or internal gains,
+  no defrost or minimum run time, a straight-line COP, and heating only (no cooling).
 - **One-node tank.** No stratification, no weekly high-temperature (legionella) cycle, no
   user-specific draw; the draw is a fixed daily shape scaled to the household figure.
 - **Little flexibility in a small band.** A 200 l tank with a 15 K band stores about 3.5 kWh, so

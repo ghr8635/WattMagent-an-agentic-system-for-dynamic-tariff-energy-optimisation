@@ -1,0 +1,24 @@
+# Example household with a heat pump. ALL appliance and building figures come from the shipped
+# catalogue and are ILLUSTRATIVE ASSUMPTIONS. The building's thermal mass (heat_capacity_kwh_per_k)
+# is the biggest uncertainty: try overriding it below and watch the result change.
+name = "Example house with heat pump"
+timezone = "Europe/Berlin"
+max_grid_kw = 14.0
+daily_base_load_kwh = 9.0
+
+[[cycle]]
+appliance = "washing_machine"
+earliest_hour = 8
+deadline_hour = 18
+
+[[cycle]]
+appliance = "dishwasher"
+earliest_hour = 19
+deadline_hour = 24
+
+[tank]
+appliance = "water_heater_200l"
+
+[heatpump]
+appliance = "heat_pump_efficient_house"
+# heat_capacity_kwh_per_k = 5.0     # a lighter building: much less to gain

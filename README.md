@@ -1,8 +1,8 @@
 # WattMagent: an agentic system for dynamic-tariff energy optimisation
 
 WattMagent plans when a household should use electricity, so flexible loads run in cheap
-hours. Today that means an EV and a home battery, plus washing machine, dryer, dishwasher and
-hot-water tank (separately planned), on German day-ahead prices; a heat pump, solar and
+hours. Today that means an EV and a home battery, plus washing machine, dryer, dishwasher,
+hot-water tank and an air heat pump (separately planned), on German day-ahead prices; solar and
 forecasting are not built yet. It sits on top of existing dynamic tariffs and home
 automation instead of replacing them.
 
@@ -53,7 +53,8 @@ schedule, checks that schedule independently, and explains it in a few sentences
 | Language model backend (Hugging Face / local Ollama) | code and tests done with fakes; **no real model has produced a verified result**. A local 1.5B model answered with garbage, and the free Hugging Face tier has no inference credits |
 | Appliances, slice 1: shiftable cycles (washer, dryer, dishwasher) and a hot-water tank, optimiser + independent verifier + safe fallback, TOML households, extensible catalogue | done, tested, **synthetic-price results only so far**; not yet connected to the agent or API; all appliance figures are assumptions (`docs/appliances.md`) |
 | Weather feed (Open-Meteo archive: temperature, solar radiation) | done and checked against one real reply; forecast endpoint **unverified** |
-| Heat pump, solar, fixed-load profiles, forecasting | not started |
+| Heat pump (building mass as storage, COP from outdoor temperature), optimiser + verifier + fallback | done, tested, **synthetic results only**; the gain depends strongly on the assumed thermal mass (`docs/appliances.md`) |
+| Solar, fixed-load profiles, forecasting | not started |
 | Deployment to a host, rollback, load and failure tests, runbook | `deploy/deploy.sh` is written but untested; the rest not started |
 
 No household savings figure is claimed. See "Results" below and `docs/results.md`.
@@ -99,6 +100,8 @@ Details: `docs/api.md`, `docs/replanning.md`, `docs/deploy.md`.
 
 ```bash
 python -m wattmagent.appliances --household config/households/example.toml --synthetic --days 60
+python -m wattmagent.appliances --household config/households/example_heat_pump.toml \
+    --csv data/prices_hourly_utc.csv --latitude 52.52 --longitude 13.41   # real weather, fetched
 ```
 
 **Backtest on historical prices:**
