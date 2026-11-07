@@ -52,7 +52,8 @@ schedule, checks that schedule independently, and explains it in a few sentences
 | Docker image (non-root, read-only, no capabilities) | built and smoke-tested in CI; **never run on a real host** |
 | Language model backend (Hugging Face / local Ollama) | code and tests done with fakes; **no real model has produced a verified result**. A local 1.5B model answered with garbage, and the free Hugging Face tier has no inference credits |
 | Appliances, slice 1: shiftable cycles (washer, dryer, dishwasher) and a hot-water tank, optimiser + independent verifier + safe fallback, TOML households, extensible catalogue | done, tested, **synthetic-price results only so far**; not yet connected to the agent or API; all appliance figures are assumptions (`docs/appliances.md`) |
-| Heat pump, solar, weather, fixed-load profiles, forecasting | not started |
+| Weather feed (Open-Meteo archive: temperature, solar radiation) | done and checked against one real reply; forecast endpoint **unverified** |
+| Heat pump, solar, fixed-load profiles, forecasting | not started |
 | Deployment to a host, rollback, load and failure tests, runbook | `deploy/deploy.sh` is written but untested; the rest not started |
 
 No household savings figure is claimed. See "Results" below and `docs/results.md`.
@@ -147,6 +148,8 @@ battery's extra gain falls from 0.45 to 0.15 EUR/day). All runs, settings and ca
 ## Data credit
 
 Price data: Bundesnetzagentur | SMARD.de, licensed CC BY 4.0.
+
+Weather data: [Open-Meteo.com](https://open-meteo.com), licensed CC BY 4.0.
 
 ## Rules this repository follows
 
