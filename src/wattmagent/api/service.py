@@ -17,6 +17,9 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from wattmagent.api.plans import PlanStore
+from wattmagent.appliances.agent import run_appliance_agent
+from wattmagent.appliances.household import Household
+from wattmagent.appliances.request import mentions_appliance
 from wattmagent.core.errors import ReplanError, WattMagentError
 from wattmagent.data.prices import load_csv
 from wattmagent.data.smard_live import JsonFetch, PriceFeedError, fetch_prices
@@ -126,6 +129,7 @@ class PlanService:
     engine: str = "simple"
     clock: Callable[[], datetime] = lambda: datetime.now(UTC)
     store: PlanStore = field(default_factory=PlanStore)
+    household: Household | None = None  # enables appliance requests (WATTMAGENT_HOUSEHOLD_FILE)
     _last_fetched: datetime | None = field(default=None, init=False, repr=False)
 
     def price_age_hours(self) -> float | None:
@@ -161,13 +165,20 @@ class PlanService:
     def plan(self, text: str, request_id: str, owner: str = "") -> tuple[int, dict[str, Any]]:
         ctx = self.provider.get()
         self._last_fetched = ctx.fetched_at
-        resp = run_agent(
-            text,
-            AgentDeps(ctx, llm=self.llm, audit=self.audit),
-            self.clock(),
-            request_id=request_id,
-            engine=self.engine,
-        )
+        if self.household is not None and mentions_appliance(text, self.household):
+            # Appliance requests are planned and explained deterministically (no model, no
+            # plan id): replanning is only built for the car.
+            resp = run_appliance_agent(
+                text, self.household, ctx, self.clock(), audit=self.audit, request_id=request_id
+            )
+        else:
+            resp = run_agent(
+                text,
+                AgentDeps(ctx, llm=self.llm, audit=self.audit),
+                self.clock(),
+                request_id=request_id,
+                engine=self.engine,
+            )
         body = self._body(resp)
         if resp.status == "planned" and resp.validated is not None:
             plan_id = uuid.uuid4().hex

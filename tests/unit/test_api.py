@@ -277,3 +277,56 @@ def test_replan_outcomes_are_counted(tmp_path: Path) -> None:
     assert 'wattmagent_replans_total{outcome="planned"} 1' in text
     assert 'wattmagent_replans_total{outcome="not_found"} 1' in text
     assert 'route="/v1/plans/{plan_id}/replan"' in text  # the template, never the id
+
+
+# --- appliance requests over HTTP ---------------------------------------------------------------
+
+HOUSEHOLD_FILE = Path(__file__).resolve().parents[2] / "config" / "households" / "example.toml"
+
+
+def test_appliance_request_over_http(tmp_path: Path) -> None:
+    from wattmagent.appliances.household import load_household
+
+    svc = fresh_service(tmp_path)
+    svc.household = load_household(HOUSEHOLD_FILE)
+    c = client(svc)
+    r = c.post("/v1/plans", json={"text": "run the washing machine by 6am"}, headers=AUTH)
+    assert r.status_code == 200
+    body = r.json()
+    assert body["status"] == "planned" and body["explanation_source"] == "template"
+    assert body["facts"]["cycles"][0]["appliance"] == "washing machine"
+    assert "plan_id" not in body
+    # the same request twice with one Idempotency-Key is answered once
+    headers = {**AUTH, "Idempotency-Key": "appliance-key-0001"}
+    first = c.post("/v1/plans", json={"text": "dishwasher by 6am"}, headers=headers)
+    again = c.post("/v1/plans", json={"text": "dishwasher by 6am"}, headers=headers)
+    assert first.json() == again.json()
+
+
+def test_household_file_setting(tmp_path: Path) -> None:
+    from tests.unit.test_api_core import write_prices
+    from wattmagent.api.app import service_from_settings
+
+    csv = tmp_path / "prices.csv"
+    write_prices(csv)
+    ok = Settings(
+        api_keys=KEY,
+        price_source="csv",
+        price_csv=csv,
+        household_file=HOUSEHOLD_FILE,
+        _env_file=None,
+    )
+    assert service_from_settings(ok).household is not None
+    broken = tmp_path / "broken.toml"
+    broken.write_text('[[cycle]]\nappliance = "toaster"\n', encoding="utf-8")
+    bad = Settings(
+        api_keys=KEY, price_source="csv", price_csv=csv, household_file=broken, _env_file=None
+    )
+    with pytest.raises(RuntimeError, match="WATTMAGENT_HOUSEHOLD_FILE"):
+        service_from_settings(bad)
+    missing = Settings(
+        api_keys=KEY, price_source="csv", price_csv=csv,
+        household_file=tmp_path / "nope.toml", _env_file=None,
+    )  # fmt: skip
+    with pytest.raises(RuntimeError, match="WATTMAGENT_HOUSEHOLD_FILE"):
+        service_from_settings(missing)

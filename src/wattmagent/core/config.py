@@ -36,6 +36,7 @@ class Settings(BaseSettings):
     price_refresh_s: int = 900  # live source: fetch at most this often
     price_csv: Path | None = None  # hourly price file the API plans from (timestamp,price_eur_mwh)
     timezone: str = "Europe/Berlin"
+    household_file: Path | None = None  # TOML household: enables appliance requests
     audit_log: Path | None = None  # JSON Lines audit file; None keeps decisions in memory only
 
     @property

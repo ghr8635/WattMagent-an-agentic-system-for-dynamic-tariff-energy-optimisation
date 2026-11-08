@@ -12,7 +12,7 @@ import hashlib
 import json
 import logging
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
@@ -79,6 +79,7 @@ def plan_appliances_safely(
     audit: AuditLog | None = None,
     request_id: str | None = None,
     now: datetime | None = None,
+    price_problems: Sequence[str] = (),
 ) -> SafeAppliancePlan:
     rid = request_id or uuid.uuid4().hex
     clock = now or datetime.now(UTC)
@@ -87,13 +88,19 @@ def plan_appliances_safely(
     report: ApplianceReport | None = None
     request_satisfied = True
 
+    if price_problems:  # stale, missing or implausible prices: never optimise on them
+        reasons.extend(price_problems)
+        request_satisfied = True
+        log.warning("price problems; using fallback", extra={"request_id": rid})
     try:
-        candidate = planner(inputs)
+        candidate = planner(inputs) if not price_problems else None
     except Exception as exc:  # noqa: BLE001  (any planner failure must lead to the fallback)
         reasons.append(f"planner_error: {type(exc).__name__}")
         log.exception("appliance planner failed; using fallback", extra={"request_id": rid})
     else:
-        if not candidate.feasible:
+        if candidate is None:
+            pass
+        elif not candidate.feasible:
             request_satisfied = False
             reasons.append(f"infeasible_request: {candidate.message}")
         else:
