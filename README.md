@@ -34,7 +34,7 @@ schedule, checks that schedule independently, and explains it in a few sentences
   limits, plug-in hours, battery state, cost against the baseline). If a plan fails, or prices
   are stale or missing, the safe fallback is used. Every decision is written to an audit log.
 
-## Status
+## Status (honest)
 
 | Area | State |
 |---|---|
@@ -52,9 +52,10 @@ schedule, checks that schedule independently, and explains it in a few sentences
 | Docker image (non-root, read-only, no capabilities) | built and smoke-tested in CI; **never run on a real host** |
 | Language model backend (Hugging Face / local Ollama) | code and tests done with fakes; **no real model has produced a verified result**. A local 1.5B model answered with garbage, and the free Hugging Face tier has no inference credits |
 | Appliances, slice 1: shiftable cycles (washer, dryer, dishwasher) and a hot-water tank, optimiser + independent verifier + safe fallback, TOML households, extensible catalogue | done, tested, **synthetic-price results only so far**; not yet connected to the agent or API; all appliance figures are assumptions (`docs/appliances.md`) |
-| Weather feed (Open-Meteo archive: temperature, solar radiation) | done and checked against one real reply; forecast endpoint **unverified** |
+| Weather feed (Open-Meteo archive: temperature, solar radiation) | done; checked against a real reply and a 1,036-day fetch; forecast endpoint **unverified** |
 | Heat pump (building mass as storage, COP from outdoor temperature), optimiser + verifier + fallback | done, tested, **synthetic results only**; the gain depends strongly on the assumed thermal mass (`docs/appliances.md`) |
-| Rooftop solar (radiation -> generation, own use, export/curtail, net-bill cost), verified independently | done, tested, **synthetic results only**; the export price is an assumption and the yield is not yet checked on a full real year |
+| Rooftop solar (radiation -> generation, own use, export/curtail, net-bill cost), verified independently | done, tested; on real prices and weather over 1,035 days the optimiser's cost was 23.0% below running immediately (16.9% below a price- and solar-aware rule), model yield about 1,008 kWh/kWp a year; **not household savings** (assumed appliances, export price, synthetic base load, perfect foresight) |
+| Plain-language appliance requests through the API ("run the dishwasher before 8pm"): deterministic parser, same safety pipeline, tested | done; cycles only (tank, heat pump and solar need a verified weather forecast); no replanning |
 | Fixed-load profiles, forecasting | not started |
 | Deployment to a host, rollback, load and failure tests, runbook | `deploy/deploy.sh` is written but untested; the rest not started |
 

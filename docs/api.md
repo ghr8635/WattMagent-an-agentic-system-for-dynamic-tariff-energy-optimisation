@@ -37,6 +37,30 @@ explanation, the decision (`optimised` or `fallback`), whether the request was s
 the facts behind the explanation and the request id. The agent's internal trace is not
 returned.
 
+## Appliance requests
+
+With `WATTMAGENT_HOUSEHOLD_FILE` set to a household TOML (see `docs/appliances.md`), the same
+`POST /v1/plans` also understands requests about the household's cycle appliances:
+
+```bash
+curl -s -X POST localhost:8000/v1/plans -H "X-API-Key: $KEY" -H "Content-Type: application/json" \
+  -d '{"text": "run the dishwasher before 8pm and the washing machine by noon"}'
+```
+
+- The answer lists, per appliance, the start and finish (with "today"/"tomorrow"), the window it
+  was planned in, its energy and its cost against starting at the window's start. Costs are
+  omitted when prices are stale or incomplete, and the plan then starts every appliance as early
+  as its window allows (the same fallback as for the car).
+- A request about the car **or** the appliances, not both: a mixed request gets a question back.
+- The same safety rules apply: independent verifier, price-freshness check, one audit record per
+  request (counts and a fingerprint only; appliance names stay out of the log).
+- No `plan_id`, and so no replanning: that exists only for the car. No language model is used.
+- Only cycles are planned from a request. The tank, heat pump and solar need weather, and the
+  forecast feed is not verified yet.
+- A time with no cue word (`at 6pm`) is a deadline, a bare number is a 24-hour time (`half past
+  five` is 05:30), and off-the-hour times are rounded to stay inside what was asked.
+- A bad or unreadable household file stops the service at start-up with a clear message.
+
 ## Behaviour worth knowing
 
 - **Order of checks:** key, rate limit, body, idempotency, agent.

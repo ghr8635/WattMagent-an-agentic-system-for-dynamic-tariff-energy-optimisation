@@ -82,7 +82,18 @@ def service_from_settings(settings: Settings) -> PlanService:
         llm = build_client(settings)
     elif settings.language_backend != "rules":
         raise RuntimeError(f"unknown language backend: {settings.language_backend!r}")
-    return PlanService(provider, audit=audit, llm=llm, store=PlanStore(settings.plan_ttl_s))
+    household = None
+    if settings.household_file is not None:
+        from wattmagent.appliances.catalogue import ConfigError
+        from wattmagent.appliances.household import load_household
+
+        try:
+            household = load_household(settings.household_file)
+        except (ConfigError, OSError) as exc:
+            raise RuntimeError(f"WATTMAGENT_HOUSEHOLD_FILE cannot be used: {exc}") from exc
+    return PlanService(
+        provider, audit=audit, llm=llm, store=PlanStore(settings.plan_ttl_s), household=household
+    )
 
 
 def create_app(
