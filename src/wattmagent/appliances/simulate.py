@@ -60,6 +60,35 @@ def simulate_tank(inputs: DayInputs, tank_kw: Sequence[float]) -> list[float]:
     return out
 
 
+def plan_cost(inputs: DayInputs, kw: Sequence[float]) -> float:
+    """Cost of the day for appliance power ``kw``.
+
+    Without solar this is the appliance energy on the prices (base load is a constant and left
+    out). With solar it is the household's whole net grid bill: base load included, own solar
+    used first, the surplus exported at the export value, or curtailed when that is worth
+    nothing or negative. Per slot the cheapest split of the solar between self-use and
+    curtailment is taken, which is what the optimiser does too.
+    """
+    if not inputs.has_solar:
+        return cost_eur(inputs.prices, kw)
+    total = 0.0
+    base, pv, export = inputs.base_kw, inputs.pv, inputs.export_value
+    for t, price in enumerate(inputs.prices):
+        demand = base[t] + (kw[t] if t < len(kw) else 0.0)
+        best = math.inf
+        for used in {0.0, min(pv[t], demand), pv[t]}:
+            net = demand - used
+            slot = price * max(0.0, net) - export[t] * max(0.0, -net)
+            best = min(best, slot)
+        total += best
+    return total
+
+
+def min_import_kw(inputs: DayInputs, t: int, appliance_power_kw: float) -> float:
+    """Smallest grid import possible in slot ``t`` (all solar used)."""
+    return max(0.0, inputs.base_kw[t] + appliance_power_kw - inputs.pv[t])
+
+
 def cost_eur(prices: Sequence[float], kw: Sequence[float]) -> float:
     """Energy of the given power series (1 h slots) on ``prices``."""
     return math.fsum(p * k for p, k in zip(prices, kw, strict=True))

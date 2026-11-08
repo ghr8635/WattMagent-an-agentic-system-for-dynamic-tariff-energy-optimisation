@@ -8,7 +8,7 @@ does from the plan's own power series and the physical tank model, then checks h
   and not colder at the end;
 - tank power within limits (and either off or full if the element does not modulate);
 - tank temperature inside the comfort band in every slot, and not colder at the end;
-- base load plus appliances within the connection limit;
+- grid import (base load plus appliances minus own solar) within the connection limit;
 - cost not worse than the "run immediately" baseline (when that baseline is itself valid).
 """
 
@@ -22,8 +22,9 @@ from wattmagent.appliances.baselines import run_immediately
 from wattmagent.appliances.models import AppliancePlan, CycleJob, DayInputs
 from wattmagent.appliances.simulate import (
     appliance_kw,
-    cost_eur,
+    min_import_kw,
     place,
+    plan_cost,
     simulate_building,
     simulate_tank,
 )
@@ -202,13 +203,13 @@ def _hard_checks(inputs: DayInputs, plan: AppliancePlan) -> list[ApplianceViolat
             )
 
     if inputs.max_grid_kw is not None:
-        base = inputs.base_kw
         for t, kw in enumerate(appliance_kw(inputs, plan)):
-            if base[t] + kw > inputs.max_grid_kw + _POWER_TOL_KW:
+            draw = min_import_kw(inputs, t, kw)
+            if draw > inputs.max_grid_kw + _POWER_TOL_KW:
                 found.append(
                     ApplianceViolation(
                         ApplianceRule.GRID_LIMIT,
-                        f"{base[t] + kw:.2f} kW exceeds the {inputs.max_grid_kw:g} kW limit",
+                        f"{draw:.2f} kW from the grid exceeds the {inputs.max_grid_kw:g} kW limit",
                         t,
                     )
                 )
@@ -227,12 +228,12 @@ def verify_appliance_plan(
     if found and found[0].rule in (ApplianceRule.SHAPE, ApplianceRule.NOT_FINITE):
         return ApplianceReport(tuple(found))
 
-    cost = cost_eur(inputs.prices, appliance_kw(inputs, plan))
+    cost = plan_cost(inputs, appliance_kw(inputs, plan))
     baseline_cost: float | None = None
     if compare_with_baseline:
         base = run_immediately(inputs)
         if not _hard_checks(inputs, base):  # only meaningful if the baseline is itself valid
-            baseline_cost = cost_eur(inputs.prices, appliance_kw(inputs, base))
+            baseline_cost = plan_cost(inputs, appliance_kw(inputs, base))
             if cost > baseline_cost * (1 + _COST_REL_TOL) + _COST_ABS_TOL_EUR:
                 found.append(
                     ApplianceViolation(

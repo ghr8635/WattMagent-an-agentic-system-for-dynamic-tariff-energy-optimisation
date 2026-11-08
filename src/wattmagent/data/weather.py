@@ -125,6 +125,18 @@ def temperature_by_hour(points: Sequence[WeatherPoint]) -> Mapping[datetime, flo
     return {p.start: p.temperature_c for p in points}
 
 
+def radiation_by_hour(points: Sequence[WeatherPoint]) -> Mapping[datetime, float]:
+    """Global horizontal radiation (W/m2) keyed by the UTC start of the hour."""
+    return {p.start: p.shortwave_w_m2 for p in points}
+
+
+def solar_yield_kwh_per_kwp(points: Sequence[WeatherPoint], performance_ratio: float) -> float:
+    """Model energy per installed kWp over ``points``: sum of radiation / 1000 x ratio.
+    A sanity check against known yields (Germany: very roughly 900-1,100 kWh/kWp a year on a
+    good roof), not a forecast."""
+    return math.fsum(p.shortwave_w_m2 for p in points) / 1000.0 * performance_ratio
+
+
 def synthetic_weather(start: datetime, days: int, seed: int) -> list[WeatherPoint]:
     """Plausible German hourly weather: a yearly and a daily temperature cycle, noise, and a
     radiation curve that follows the sun and the season. Deterministic for (start, days, seed).

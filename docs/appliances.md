@@ -1,6 +1,6 @@
 # Appliances: shiftable cycles and the hot-water tank
 
-Status: **slice 2**. Three behaviour classes, one optimiser, one independent verifier, a TOML
+Status: **slice 3**. Four behaviour classes, one optimiser, one independent verifier, a TOML
 household file and a small extensible catalogue. It is **not yet connected to the agent or the
 API**, and it is planned separately from the EV and battery (see "Limits").
 
@@ -12,7 +12,7 @@ API**, and it is planned separately from the EV and battery (see "Limits").
 | **Shiftable cycle** | washing machine, dryer, dishwasher | fixed hourly power profile, runs once, no pause, inside a window | **done** |
 | **Thermal store with a comfort band** | electric water heater | one-node tank, temperature band, on/off or modulating element | **done** |
 | **Thermal store, building mass** | air heat pump | one-node building, comfort band, COP from the outdoor temperature | **done** (heat pump; resistive heating and AC not started) |
-| Generation | rooftop PV | needs a weather source (not yet verified) | not started |
+| **Generation** | rooftop PV | radiation x kWp x performance ratio; own use first, export or curtail | **done** (the model; yield not yet checked on a full real year) |
 | Fixed loads | fridge, cooking, lighting, TV, standby | demand profile, never scheduled | not started |
 
 ## How it works
@@ -71,6 +71,30 @@ do not flatter it:
 Read it as "the gain grows with the assumed thermal mass", not as a forecast. It is also
 helped by perfect foresight of prices and weather, which a real system would not have.
 
+## Rooftop solar
+
+PV generation per hour is `kWp x (radiation / 1000 W/m2) x performance ratio`, from the same
+Open-Meteo reply as the temperature (global horizontal radiation). The performance ratio (0.8)
+folds in tilt, orientation, temperature and inverter losses into one assumed number.
+
+- **The cost becomes the whole net grid bill** when a household has solar: base load included,
+  own solar used first, surplus exported. Without solar the cost stays "appliance energy only".
+  The two are not comparable with each other.
+- **Export value** = the export price, but never above that hour's import price, and negative
+  when the import price is negative. This stops the optimiser from "profiting" by importing
+  and exporting at the same time. When exporting would cost money, the surplus is curtailed.
+- **The export price is an assumption** (0.08 EUR/kWh in the example, a round figure for a
+  fixed feed-in rate). Check the rate that applies to a real installation; it is not verified here.
+- The grid limit applies to **grid import** (base load plus appliances minus own solar).
+- The independent verifier recomputes the net bill from the plan's power series; the optimiser's
+  own cost matched it on 40 brute-force days and 10 days with everything switched on. (An early
+  version double-counted appliance energy; the independent check caught it.)
+- `cheapest_start` judges each cycle on the net bill, so it already moves a cycle into sunny
+  hours; the optimiser's remaining gain comes from coordination, the tank and the heat pump.
+- A model yield is printed per run (kWh per kWp over the period). Compare it with known yields
+  (Germany: roughly 900-1,100 kWh/kWp a year on a good roof) **only over a full year**; a winter
+  run says nothing about the annual figure.
+
 ## Describing a household
 
 See `config/households/example.toml`. Appliances are catalogue keys plus a local-clock window.
@@ -97,9 +121,10 @@ the file name in the message, so a typo cannot silently change a household.
 python -m wattmagent.appliances --household config/households/example.toml \
     --csv data/prices_hourly_utc.csv --tariff config/tariffs/illustrative_de_household.toml
 python -m wattmagent.appliances --household config/households/example.toml --synthetic --days 60
+python -m wattmagent.appliances --household config/households/example_full.toml --synthetic --start 2025-06-01
 ```
 
-`docs/results/appliances_synthetic.txt` and `appliances_heatpump_synthetic.txt` are **synthetic** runs (labelled in its header). A
+`docs/results/appliances_*.txt` (cycles+tank, heat pump, full house in winter and summer) are **synthetic** runs (labelled in its header). A
 run on the real SMARD series is done on your machine and is not recorded here yet.
 
 ## What the tests establish
@@ -126,6 +151,8 @@ run on the real SMARD series is done on your machine and is not recorded here ye
 - **Planned separately from the EV and battery.** The EV and battery are not part of
   `DayInputs`, so nothing here shares a connection limit with them, and a battery could shift
   appliance energy further. The base load enters only through the connection limit.
+- **Solar is a deterministic estimate.** Radiation is the day's actual value (perfect foresight);
+  no shading, snow, panel temperature or inverter clipping, and no battery to store the surplus.
 - **One-node building.** No separate rooms, walls or floor heating, no solar or internal gains,
   no defrost or minimum run time, a straight-line COP, and heating only (no cooling).
 - **One-node tank.** No stratification, no weekly high-temperature (legionella) cycle, no

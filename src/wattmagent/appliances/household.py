@@ -55,9 +55,28 @@ _TOP = {
     "cycle",
     "tank",
     "heatpump",
+    "solar",
     "catalogue",
 }
+_SOLAR_KEYS = {"kwp", "performance_ratio", "export_price_eur_kwh"}
 _CYCLE_ENTRY = {"appliance", "name", "earliest_hour", "deadline_hour", "profile_kw", "description"}
+
+
+@dataclass(frozen=True, slots=True)
+class SolarModel:
+    """Rooftop PV: generation = kwp x (radiation / 1000 W/m2) x performance_ratio.
+
+    The performance ratio folds in tilt and orientation, temperature, inverter and cable
+    losses; 0.8 is a round assumption, not a measurement of any roof.
+    """
+
+    kwp: float
+    performance_ratio: float = 0.8
+    export_price_eur_kwh: float = 0.08  # ASSUMPTION: check the current feed-in rate
+
+
+def pv_power_kw(solar: SolarModel, radiation_w_m2: float) -> float:
+    return solar.kwp * (radiation_w_m2 / 1000.0) * solar.performance_ratio
 
 
 @dataclass(frozen=True, slots=True)
@@ -77,6 +96,7 @@ class Household:
     cycles: tuple[CycleEntry, ...] = ()
     tank: TankModel | None = None
     heatpump: HeatPumpModel | None = None
+    solar: SolarModel | None = None
     notes: list[str] = field(default_factory=list)
 
 
@@ -174,6 +194,31 @@ def parse_household(raw: Mapping[str, Any], catalogue: Catalogue | None = None) 
         except ValueError as exc:
             raise ConfigError(f"heatpump: {exc}") from exc
 
+    solar: SolarModel | None = None
+    sol_table = raw.get("solar")
+    if sol_table is not None:
+        if not isinstance(sol_table, Mapping):
+            raise ConfigError("solar: expected a table")
+        unknown = sorted(set(sol_table) - _SOLAR_KEYS)
+        if unknown:
+            raise ConfigError(f"solar: unknown key(s) {', '.join(unknown)}")
+        if "kwp" not in sol_table:
+            raise ConfigError("solar: kwp is required")
+        values = {k: sol_table[k] for k in _SOLAR_KEYS if k in sol_table}
+        for k, v in values.items():
+            if isinstance(v, bool) or not isinstance(v, int | float):
+                raise ConfigError(f"solar.{k}: {v!r} is not a number")
+        kwp = float(values["kwp"])
+        ratio = float(values.get("performance_ratio", 0.8))
+        export = float(values.get("export_price_eur_kwh", 0.08))
+        if not 0 < kwp <= 100:
+            raise ConfigError("solar.kwp: expected a number above 0 and up to 100")
+        if not 0 < ratio <= 1:
+            raise ConfigError("solar.performance_ratio: expected a number in (0, 1]")
+        if export < 0:
+            raise ConfigError("solar.export_price_eur_kwh: cannot be negative")
+        solar = SolarModel(kwp, ratio, export)
+
     return Household(
         name=str(raw.get("name", "household")),
         timezone=tz,
@@ -182,6 +227,7 @@ def parse_household(raw: Mapping[str, Any], catalogue: Catalogue | None = None) 
         cycles=tuple(entries),
         tank=tank,
         heatpump=heatpump,
+        solar=solar,
     )
 
 
@@ -247,12 +293,13 @@ def build_day_inputs(
     prices: Sequence[float],
     local_hours: Sequence[int],
     outdoor_c: Sequence[float] | None = None,
+    radiation_w_m2: Sequence[float] | None = None,
 ) -> DayInputs:
     """A planning day for ``household``. ``local_hours[t]`` is slot ``t``'s local clock hour.
 
     The heat pump is part of the day only when ``outdoor_c`` (one temperature per slot) is
     given: without weather there is nothing to plan it against. Pass ``None`` for a day
-    with no heating need.
+    with no heating need. Solar is part of the day only when ``radiation_w_m2`` is given.
     """
     if len(prices) != len(local_hours):
         raise ValueError("prices and local_hours must have the same length")
@@ -280,6 +327,11 @@ def build_day_inputs(
         if len(outdoor_c) != len(prices):
             raise ValueError("outdoor_c and prices must have the same length")
         building = building_spec(household.heatpump)
+    pv: list[float] = []
+    if household.solar is not None and radiation_w_m2 is not None:
+        if len(radiation_w_m2) != len(prices):
+            raise ValueError("radiation_w_m2 and prices must have the same length")
+        pv = [pv_power_kw(household.solar, g) for g in radiation_w_m2]
     return DayInputs(
         prices=list(prices),
         jobs=jobs,
@@ -287,6 +339,10 @@ def build_day_inputs(
         tank_draw_kwh=draws,
         base_load_kw=base,
         max_grid_kw=household.max_grid_kw,
+        pv_kw=pv,
+        export_price_eur_kwh=household.solar.export_price_eur_kwh
+        if pv and household.solar
+        else 0.0,
         building=building,
         outdoor_c=list(outdoor_c) if building is not None and outdoor_c is not None else (),
     )

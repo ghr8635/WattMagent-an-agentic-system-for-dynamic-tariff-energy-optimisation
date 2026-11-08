@@ -2,8 +2,8 @@
 
 WattMagent plans when a household should use electricity, so flexible loads run in cheap
 hours. Today that means an EV and a home battery, plus washing machine, dryer, dishwasher,
-hot-water tank and an air heat pump (separately planned), on German day-ahead prices; solar and
-forecasting are not built yet. It sits on top of existing dynamic tariffs and home
+hot-water tank, an air heat pump and rooftop solar (separately planned), on German day-ahead prices; forecasting
+and a battery for the solar surplus are not built yet. It sits on top of existing dynamic tariffs and home
 automation instead of replacing them.
 
 You tell it what you need in plain language ("80% by 7am, not before 22:00"). It returns a
@@ -54,7 +54,8 @@ schedule, checks that schedule independently, and explains it in a few sentences
 | Appliances, slice 1: shiftable cycles (washer, dryer, dishwasher) and a hot-water tank, optimiser + independent verifier + safe fallback, TOML households, extensible catalogue | done, tested, **synthetic-price results only so far**; not yet connected to the agent or API; all appliance figures are assumptions (`docs/appliances.md`) |
 | Weather feed (Open-Meteo archive: temperature, solar radiation) | done and checked against one real reply; forecast endpoint **unverified** |
 | Heat pump (building mass as storage, COP from outdoor temperature), optimiser + verifier + fallback | done, tested, **synthetic results only**; the gain depends strongly on the assumed thermal mass (`docs/appliances.md`) |
-| Solar, fixed-load profiles, forecasting | not started |
+| Rooftop solar (radiation -> generation, own use, export/curtail, net-bill cost), verified independently | done, tested, **synthetic results only**; the export price is an assumption and the yield is not yet checked on a full real year |
+| Fixed-load profiles, forecasting | not started |
 | Deployment to a host, rollback, load and failure tests, runbook | `deploy/deploy.sh` is written but untested; the rest not started |
 
 No household savings figure is claimed. See "Results" below and `docs/results.md`.
