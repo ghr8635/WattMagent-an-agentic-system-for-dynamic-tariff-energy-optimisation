@@ -1,8 +1,9 @@
 """Rule-based planners: the floors the optimiser has to beat.
 
 - ``run_immediately``: every cycle at its earliest start, tank on a simple thermostat;
-- ``cheapest_start``: every cycle at the cheapest start for that cycle alone (ignores the
-  grid limit and other cycles), tank on the same thermostat, heat pump on the thrifty one.
+- ``cheapest_start``: every cycle at the cheapest start for that cycle alone (on the net bill
+  when there is solar; ignores the grid limit and other cycles), tank on the same thermostat,
+  heat pump on the thrifty one.
 
 The thermostat is an hourly approximation of a real one: heat when the water is in the
 lower quarter of the band, or when it would otherwise leave the band, and never above the
@@ -21,7 +22,7 @@ from wattmagent.appliances.models import (
     building_step,
     tank_step,
 )
-from wattmagent.appliances.simulate import place
+from wattmagent.appliances.simulate import place, plan_cost
 from wattmagent.planning.household import PlanStatus
 
 _EPS = 1e-9
@@ -119,6 +120,8 @@ def cheapest_start(inputs: DayInputs) -> AppliancePlan:
         profile = job.spec.profile_kw
 
         def cost(s: int) -> float:
+            if inputs.has_solar:  # judge the start on the net bill, so a sunny hour counts
+                return plan_cost(inputs, place(profile, s, inputs.slots))
             return sum(inputs.prices[s + i] * kw for i, kw in enumerate(profile))
 
         best = job.earliest

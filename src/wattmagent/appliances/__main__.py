@@ -20,6 +20,8 @@ from wattmagent.data.smard_live import HttpxFetch
 from wattmagent.data.weather import (
     fetch_archive,
     parse_archive,
+    radiation_by_hour,
+    solar_yield_kwh_per_kwp,
     synthetic_weather,
     temperature_by_hour,
 )
@@ -35,6 +37,7 @@ def main() -> None:
     src.add_argument("--synthetic", action="store_true", help="seeded synthetic prices (dev only)")
     p.add_argument("--days", type=int, default=60, help="synthetic only")
     p.add_argument("--seed", type=int, default=0, help="synthetic only")
+    p.add_argument("--start", type=str, default="2025-01-01", help="synthetic only: first day")
     p.add_argument("--tariff", type=Path, help="TOML tariff; without it spot prices are used")
     wx = p.add_mutually_exclusive_group()
     wx.add_argument(
@@ -53,13 +56,17 @@ def main() -> None:
         prices = load_csv(args.csv)
         label = f"price file: {args.csv.name} (provenance is up to you; see docs/data.md)"
     else:
-        prices = synthetic_prices(datetime(2025, 1, 1, tzinfo=tz), args.days, args.seed)
+        prices = synthetic_prices(
+            datetime.fromisoformat(args.start).replace(tzinfo=tz), args.days, args.seed
+        )
         label = f"SYNTHETIC prices (seed={args.seed}), not market data"
         tz = ZoneInfo(household.timezone)
 
     outdoor = None
+    radiation = None
     weather_label = ""
-    if household.heatpump is not None:
+    yield_line = ""
+    if household.heatpump is not None or household.solar is not None:
         if args.weather_json:
             points = parse_archive(json.loads(args.weather_json.read_text(encoding="utf-8")))
             weather_label = f"weather file: {args.weather_json.name} (Open-Meteo, CC BY 4.0)"
@@ -73,8 +80,25 @@ def main() -> None:
             points = synthetic_weather(begin, args.days + 3, args.seed)
             weather_label = f"SYNTHETIC weather (seed={args.seed}), not measurements"
         else:
-            p.error("this household has a heat pump: give --weather-json or --latitude/--longitude")
+            p.error(
+                "this household has a heat pump or solar: "
+                "give --weather-json or --latitude/--longitude"
+            )
         outdoor = temperature_by_hour(points)
+        radiation = radiation_by_hour(points)
+        if household.solar is not None:
+            first_hour = prices[0].start.astimezone(UTC)
+            last_hour = prices[-1].start.astimezone(UTC)
+            used = [pt for pt in points if first_hour <= pt.start <= last_hour]
+            per_kwp = solar_yield_kwh_per_kwp(used, household.solar.performance_ratio)
+            days = max(1, len(used)) / 24
+            sol = household.solar
+            yield_line = (
+                f"# solar: {sol.kwp:g} kWp, performance ratio {sol.performance_ratio:g}, "
+                f"export {sol.export_price_eur_kwh:g} EUR/kWh (ASSUMED); model yield "
+                f"{per_kwp:.0f} kWh/kWp over {days:.0f} days (compare with known yields only "
+                "over a full year)"
+            )
 
     banner = ""
     if args.tariff:
@@ -91,11 +115,19 @@ def main() -> None:
         f"# {len(household.cycles)} cycle appliances, hot-water tank: "
         f"{household.tank.key if household.tank else 'none'}, "
         f"heat pump: {household.heatpump.key if household.heatpump else 'none'}, "
+        f"solar: {f'{household.solar.kwp:g} kWp' if household.solar else 'none'}, "
         f"connection limit: {household.max_grid_kw or 'none'} kW"
     )
     if weather_label:
-        print(f"# {weather_label}; heat pump = building mass as heat storage (assumed figures)")
-    print(f"# cost basis: {basis}; cost = appliance energy only, base load excluded")
+        print(f"# {weather_label}")
+    if yield_line:
+        print(yield_line)
+    scope = (
+        "whole net grid bill: base load included, own solar used first, surplus exported"
+        if household.solar
+        else "appliance energy only, base load excluded"
+    )
+    print(f"# cost basis: {basis}; cost = {scope}")
     print(
         "# appliance figures are ILLUSTRATIVE ASSUMPTIONS; hot-water use and base load are "
         "SYNTHETIC; day-ahead prices are assumed known for the whole day"
@@ -104,7 +136,7 @@ def main() -> None:
         print(banner)
     audit = InMemoryAuditLog()
     results = run_appliance_backtest(
-        prices, household, default_planners(audit), tz=tz, outdoor=outdoor
+        prices, household, default_planners(audit), tz=tz, outdoor=outdoor, radiation=radiation
     )
     print(format_summary(results, baseline="run_immediately"))
     fallbacks = [e for e in audit.entries if e["decision"] == "fallback"]

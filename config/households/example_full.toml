@@ -1,0 +1,32 @@
+# Example household with everything: cycles, hot-water tank, heat pump and rooftop solar.
+# ALL appliance, building and solar figures are ILLUSTRATIVE ASSUMPTIONS, not measurements.
+name = "Example house with heat pump and solar"
+timezone = "Europe/Berlin"
+max_grid_kw = 14.0            # limit on what the house draws from the grid
+daily_base_load_kwh = 9.0     # SYNTHETIC base load; with solar it matters (self-consumption)
+
+[[cycle]]
+appliance = "washing_machine"
+earliest_hour = 8
+deadline_hour = 18
+
+[[cycle]]
+appliance = "dishwasher"
+earliest_hour = 12
+deadline_hour = 24
+
+[[cycle]]
+appliance = "tumble_dryer_heat_pump"
+earliest_hour = 9
+deadline_hour = 22
+
+[tank]
+appliance = "water_heater_200l"
+
+[heatpump]
+appliance = "heat_pump_efficient_house"
+
+[solar]
+kwp = 6.0                     # installed peak power
+performance_ratio = 0.8       # tilt, temperature and inverter losses folded into one number
+export_price_eur_kwh = 0.08   # ASSUMPTION for a fixed feed-in rate: check the current one

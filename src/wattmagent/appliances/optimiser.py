@@ -6,6 +6,8 @@ Unknowns
 - ``z[t]``     element duty in slot ``t`` (binary for an on/off element, 0..1 if modulating)
 - ``T[t]``     tank temperature at the end of slot ``t`` (inside the comfort band)
 - ``Q[t]``, ``Tb[t]``  heat-pump heat (thermal kW, 0..max) and indoor temperature (comfort band)
+- ``g[t]``, ``x[t]``, ``c[t]``  grid import, export and curtailed solar (only with solar):
+  ``g - x - c = base + appliances - solar``, cost ``price g - export_value x``
 
 Model
 
@@ -19,8 +21,9 @@ Model
 
 (COP depends on the known outdoor temperature, so this stays linear; the heat-pump part is a
 plain LP). With ``a = 1 - loss / C`` and ``C`` the tank heat capacity. A cycle is one block
-of ``y``, so it cannot be paused or split: that is what "shiftable cycle" means. Base load is a
-constant and does not enter the cost; it matters only for the connection limit.
+of ``y``, so it cannot be paused or split: that is what "shiftable cycle" means. Without solar,
+base load is a constant, left out of the cost, and matters only for the connection limit. With
+solar the cost is the household's whole net grid bill, base load included.
 """
 
 from __future__ import annotations
@@ -60,6 +63,12 @@ def plan_appliances(inputs: DayInputs) -> AppliancePlan:
     b0 = q0 + n
     if building is not None:
         nv += 2 * n
+    solar = inputs.has_solar
+    g0 = nv  # grid import (n), export (n), curtailment (n): only with solar
+    x0 = g0 + n
+    c0 = x0 + n
+    if solar:
+        nv += 3 * n
     if nv == 0:
         return AppliancePlan(PlanStatus.OPTIMAL, planned_cost_eur=0.0)
 
@@ -71,6 +80,20 @@ def plan_appliances(inputs: DayInputs) -> AppliancePlan:
     for k, (j, s) in enumerate(y_cols):
         profile = inputs.jobs[j].spec.profile_kw
         cost[k] = float(np.dot(prices[s : s + len(profile)], profile))
+
+    def load_row(t: int) -> np.ndarray:
+        """Appliance power in slot ``t`` as a row over the variables."""
+        row = np.zeros(nv)
+        for k, (j, s) in enumerate(y_cols):
+            i = t - s
+            profile = inputs.jobs[j].spec.profile_kw
+            if 0 <= i < len(profile):
+                row[k] = profile[i]
+        if tank is not None:
+            row[z0 + t] = tank.power_kw
+        if building is not None:
+            row[q0 + t] = 1.0 / cop[t]
+        return row
 
     if building is not None:
         cost[q0 : q0 + n] = prices / np.asarray(cop)
@@ -129,20 +152,26 @@ def plan_appliances(inputs: DayInputs) -> AppliancePlan:
             eq_rows.append(row)
             eq_rhs.append(rhs)
 
-    if inputs.max_grid_kw is not None:
-        base = inputs.base_kw
+    base = inputs.base_kw
+    if solar:
+        pv = inputs.pv
+        export = inputs.export_value
+        cost[:g0] = 0.0  # appliance energy is paid for through the grid import below
+        cost[g0 : g0 + n] = prices
+        cost[x0 : x0 + n] = -np.asarray(export)
+        ub[g0 : g0 + n] = inputs.max_grid_kw if inputs.max_grid_kw is not None else np.inf
+        ub[x0 : x0 + n] = pv
+        ub[c0 : c0 + n] = pv
+        for t in range(n):  # grid import - export - curtailed solar = demand - solar
+            row = -load_row(t)
+            row[g0 + t] = 1.0
+            row[x0 + t] = -1.0
+            row[c0 + t] = -1.0
+            eq_rows.append(row)
+            eq_rhs.append(base[t] - pv[t])
+    elif inputs.max_grid_kw is not None:
         for t in range(n):
-            row = np.zeros(nv)
-            for k, (j, s) in enumerate(y_cols):
-                i = t - s
-                profile = inputs.jobs[j].spec.profile_kw
-                if 0 <= i < len(profile):
-                    row[k] = profile[i]
-            if tank is not None:
-                row[z0 + t] = p_tank
-            if building is not None:
-                row[q0 + t] = 1.0 / cop[t]
-            ub_rows.append(row)
+            ub_rows.append(load_row(t))
             ub_rhs.append(inputs.max_grid_kw - base[t])
 
     constraints = []

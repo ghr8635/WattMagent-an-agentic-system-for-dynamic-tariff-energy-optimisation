@@ -11,7 +11,7 @@
 | `optimiser` | MILP (HiGHS via SciPy): EV + battery, one planning day | done |
 | `safety` | Verifier, price-freshness check, fallback plan, audit log; the only path to an executable plan | done |
 | `backtest` | Replay a price series; bill schedules on *actual* prices (EV-only and whole-household) | done |
-| `appliances` | Shiftable cycles, a hot-water tank and a heat pump on building mass: models, MILP, baselines, own verifier and safe pipeline, TOML households and catalogue, backtest (`docs/appliances.md`) | slices 1-2 done; not wired into `graph` or `api` yet |
+| `appliances` | Shiftable cycles, a hot-water tank and a heat pump on building mass and rooftop solar: models, MILP, baselines, own verifier and safe pipeline, TOML households and catalogue, backtest (`docs/appliances.md`) | slices 1-3 done; not wired into `graph` or `api` yet |
 | `llm` | HF Inference Providers client, fallback chain, budget, cache | done |
 | `graph` | Agent: parse request, validate, plan (via `safety`), explain; LangGraph or built-in runner | done; `run_replan` plans again from a stored, already validated request |
 | `api` | FastAPI: API keys, rate limit, request IDs, idempotency, health and readiness; framework-free core in `security`, `ratelimit`, `idempotency`, `service` | done (single process; no streaming) |

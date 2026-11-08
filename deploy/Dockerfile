@@ -6,6 +6,12 @@ COPY src ./src
 RUN python -m venv /opt/venv && /opt/venv/bin/pip install --no-cache-dir "."
 
 FROM python:3.12-slim
+# Pull in Debian security fixes published since the base image was built (the image scan fails
+# on fixed HIGH/CRITICAL findings). Not byte-for-byte reproducible; pinning the base image by
+# digest and rebuilding on a schedule is on the production checklist.
+RUN apt-get update \
+    && apt-get upgrade -y --no-install-recommends \
+    && rm -rf /var/lib/apt/lists/*
 RUN useradd --create-home --uid 10001 app
 COPY --from=build /opt/venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH" PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1

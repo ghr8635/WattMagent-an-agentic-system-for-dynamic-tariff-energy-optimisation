@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Iterator, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime, tzinfo
 
 from wattmagent.appliances.baselines import cheapest_start, run_immediately
@@ -23,7 +23,7 @@ from wattmagent.appliances.household import Household, build_day_inputs
 from wattmagent.appliances.models import AppliancePlan, DayInputs
 from wattmagent.appliances.optimiser import plan_appliances
 from wattmagent.appliances.pipeline import AppliancePlanner, plan_appliances_safely
-from wattmagent.appliances.simulate import appliance_kw, cost_eur
+from wattmagent.appliances.simulate import appliance_kw, plan_cost
 from wattmagent.appliances.verifier import verify_appliance_plan
 from wattmagent.data.prices import PricePoint
 from wattmagent.safety.audit import AuditLog
@@ -67,7 +67,8 @@ def simulate_day(
     """Bill ``plan`` on ``actual`` prices. Returns (cost EUR, kWh, passes the verifier)."""
     kw = appliance_kw(inputs, plan)
     valid = verify_appliance_plan(inputs, plan, compare_with_baseline=False).passed
-    return cost_eur(actual, kw), math.fsum(kw), valid
+    billed = replace(inputs, prices=list(actual))
+    return plan_cost(billed, kw), math.fsum(kw), valid
 
 
 def run_appliance_backtest(
@@ -77,6 +78,7 @@ def run_appliance_backtest(
     tz: tzinfo | None = None,
     outdoor: Mapping[datetime, float] | None = None,
     heating_max_mean_c: float = 15.0,
+    radiation: Mapping[datetime, float] | None = None,
 ) -> list[ApplianceSummary]:
     """Replay ``planners`` over every complete local day.
 
@@ -84,7 +86,9 @@ def run_appliance_backtest(
     household has a heat pump). The heat pump is part of a day's plan only when that day's mean
     outdoor temperature is at most ``heating_max_mean_c``; other days have no heating need and
     the pump is left out (the model cannot cool). Planners see the day's actual weather, a
-    perfect-foresight assumption like the price one.
+    perfect-foresight assumption like the price one. A household with solar also needs
+    ``radiation`` (W/m2, same keys); every day gets its solar, and the billed cost becomes the
+    whole net grid bill (see ``plan_cost``).
     """
     for prev, cur in zip(prices, prices[1:], strict=False):
         if (cur.start - prev.start).total_seconds() != 3600:
@@ -95,6 +99,21 @@ def run_appliance_backtest(
 
     if household.heatpump is not None and outdoor is None:
         raise ValueError("this household has a heat pump: outdoor temperatures are required")
+
+    if household.solar is not None and radiation is None:
+        raise ValueError("this household has solar: radiation data is required")
+
+    def day_radiation(window: Sequence[PricePoint]) -> list[float] | None:
+        if household.solar is None or radiation is None:
+            return None
+        values: list[float] = []
+        for p in window:
+            start = p.start if p.start.tzinfo else p.start.replace(tzinfo=UTC)
+            value = radiation.get(start.astimezone(UTC))
+            if value is None:
+                raise ValueError(f"no radiation for {p.start.isoformat()}; it must cover every day")
+            values.append(value)
+        return values
 
     def day_outdoor(window: Sequence[PricePoint]) -> list[float] | None:
         if household.heatpump is None or outdoor is None:
@@ -116,7 +135,7 @@ def run_appliance_backtest(
             actual = [p.eur_per_kwh for p in window]
             hours = [_local_hour(p, tz) for p in window]
             temps = day_outdoor(window)
-            inputs = build_day_inputs(household, actual, hours, temps)
+            inputs = build_day_inputs(household, actual, hours, temps, day_radiation(window))
             plan = planner(inputs)
             fallback = not plan.feasible
             if fallback:

@@ -163,6 +163,8 @@ class DayInputs:
     max_grid_kw: float | None = None  # connection limit for base load plus appliances
     building: BuildingSpec | None = None
     outdoor_c: Sequence[float] = ()  # outdoor temperature per slot; required with a building
+    pv_kw: Sequence[float] = ()  # rooftop generation per slot (expected, not measured)
+    export_price_eur_kwh: float = 0.0  # what a kWh fed into the grid earns (before the cap below)
 
     def __post_init__(self) -> None:
         n = len(self.prices)
@@ -185,6 +187,12 @@ class DayInputs:
             len(self.outdoor_c) != n or not all(math.isfinite(v) for v in self.outdoor_c)
         ):
             raise ValueError("outdoor_c needs one finite value per slot with a building")
+        if self.pv_kw and (
+            len(self.pv_kw) != n or any(not math.isfinite(v) or v < 0 for v in self.pv_kw)
+        ):
+            raise ValueError("pv_kw needs one finite, non-negative value per slot (or none)")
+        if not math.isfinite(self.export_price_eur_kwh) or self.export_price_eur_kwh < 0:
+            raise ValueError("export_price_eur_kwh must be finite and not negative")
         if self.base_load_kw and len(self.base_load_kw) != n:
             raise ValueError("base_load_kw needs one value per slot (or none)")
         if self.max_grid_kw is not None and self.max_grid_kw <= 0:
@@ -199,6 +207,21 @@ class DayInputs:
         """Heat-pump efficiency per slot (empty without a building)."""
         b = self.building
         return [b.cop(t) for t in self.outdoor_c] if b is not None else []
+
+    @property
+    def has_solar(self) -> bool:
+        return any(v > 0 for v in self.pv_kw)
+
+    @property
+    def pv(self) -> list[float]:
+        return list(self.pv_kw) if self.pv_kw else [0.0] * self.slots
+
+    @property
+    def export_value(self) -> list[float]:
+        """What exporting one kWh earns per slot: the export price, never more than the import
+        price of that hour (so importing and exporting at once cannot make money), and
+        negative when the import price is negative (curtailing is then better)."""
+        return [min(self.export_price_eur_kwh, p) for p in self.prices]
 
     @property
     def base_kw(self) -> list[float]:
