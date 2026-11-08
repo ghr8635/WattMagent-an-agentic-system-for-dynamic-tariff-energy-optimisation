@@ -96,6 +96,9 @@ units `°C` and `W/m²`, one value per hour in parallel arrays. The parser rejec
 non-UTC offsets, gaps in the hours, non-numbers and implausible values; a `null` hour is
 skipped, never filled.
 
+Checked on a long range on 2026-11-08: one archive request returned 1,036 days of hourly data
+that the parser accepted.
+
 **Not verified:** the forecast endpoint (the archive lags the present, so live use needs it),
 how the archive marks missing hours, and the long-run availability of the free tier. Only
 the archive request has been seen working.

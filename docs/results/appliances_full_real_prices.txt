@@ -1,0 +1,17 @@
+# REAL prices (SMARD file) and REAL weather (Open-Meteo archive). Run by the project owner on
+# their machine, 2026-11-08, pasted verbatim. Command:
+#   python -m wattmagent.appliances --household config/households/example_full.toml \
+#       --csv data/prices_hourly_utc.csv --latitude 52.52 --longitude 13.41
+# Not household savings: see the caveats in docs/appliances.md and docs/results.md.
+# price file: prices_hourly_utc.csv (provenance is up to you; see docs/data.md)
+# household: Example house with heat pump and solar, time zone Europe/Berlin
+# 3 cycle appliances, hot-water tank: water_heater_200l, heat pump: heat_pump_efficient_house, solar: 6 kWp, connection limit: 14.0 kW
+# weather: Open-Meteo archive (CC BY 4.0), fetched now
+# solar: 6 kWp, performance ratio 0.8, export 0.08 EUR/kWh (ASSUMED); model yield 2860 kWh/kWp over 1036 days (compare with known yields only over a full year)
+# cost basis: spot (wholesale) energy price only: no grid fees, taxes or margin; cost = whole net grid bill: base load included, own solar used first, surplus exported
+# appliance figures are ILLUSTRATIVE ASSUMPTIONS; hot-water use and base load are SYNTHETIC; day-ahead prices are assumed known for the whole day
+strategy            days  cost/day  saved/day  vs base  kWh/day   valid days  fallback  heating
+run_immediately     1035    1.8963                        18.24    1035/1035         0      628
+cheapest_start      1035    1.7564     0.1399    -7.4%    18.00    1035/1035         0      628
+milp_optimiser      1035    1.4597     0.4365   -23.0%    18.06    1035/1035         0      628
+# safety: 1035 optimiser plans verified, 0 fallbacks (none)

@@ -95,6 +95,26 @@ folds in tilt, orientation, temperature and inverter losses into one assumed num
   (Germany: roughly 900-1,100 kWh/kWp a year on a good roof) **only over a full year**; a winter
   run says nothing about the annual figure.
 
+### Real-data run (prices and weather)
+
+`docs/results/appliances_full_real_prices.txt`: the full-house example on real SMARD prices and
+real Open-Meteo weather, 1,035 complete days (about 2.8 years), run on the owner's machine.
+
+| Strategy | Mean net cost per day | vs run immediately |
+|---|---|---|
+| run_immediately | 1.896 EUR | |
+| cheapest_start (price- and solar-aware rule) | 1.756 EUR | -7.4% |
+| milp_optimiser | 1.460 EUR | -23.0% (-16.9% vs cheapest_start) |
+
+All 1,035 optimiser plans passed the independent verifier; none needed the fallback. The model
+yield was 2,860 kWh/kWp over 1,036 days, about 1,008 kWh/kWp a year: inside the rough
+900-1,100 range for Germany. That is a plausibility check on the radiation and performance-ratio
+assumptions, not a calibration (the period is not a whole number of years).
+
+**Not household savings.** Spot prices only (no fees, taxes or margin), a synthetic base load and
+hot-water use, assumed appliance and building figures, an assumed export price, and perfect
+foresight of the day's prices and weather.
+
 ## Describing a household
 
 See `config/households/example.toml`. Appliances are catalogue keys plus a local-clock window.
