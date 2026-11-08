@@ -34,7 +34,7 @@ schedule, checks that schedule independently, and explains it in a few sentences
   limits, plug-in hours, battery state, cost against the baseline). If a plan fails, or prices
   are stale or missing, the safe fallback is used. Every decision is written to an audit log.
 
-## Status (honest)
+## Status
 
 | Area | State |
 |---|---|
