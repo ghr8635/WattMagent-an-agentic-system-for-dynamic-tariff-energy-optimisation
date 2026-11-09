@@ -41,9 +41,12 @@ real customers or devices.
 - [ ] Locked dependency versions (lockfile) and reproducible builds
 - [x] Container smoke test in CI: non-root user, read-only filesystem, no capabilities, 401 without a key, replay on repeated `Idempotency-Key` (`scripts/smoke_test.sh`)
 - [ ] Deployment with automatic rollback: `deploy/deploy.sh` is written but untested, no host yet
-- [ ] Locked image inputs: base image digest and a dependency lockfile (the image currently installs the newest allowed versions)
-- [ ] Load test; failure tests (LLM down, price feed down, slow responses)
-- [ ] Runbook, backup and restore of state, alerting plan
+- [ ] Locked image inputs: base image digest and a dependency lockfile (the image currently installs the newest allowed versions). The manual `Refresh pins` workflow produces both; they have not been run or committed yet
+- [x] Failure tests: solver failure, nonsense or unreadable plans, price problems, planner crashes, junk input, 48 concurrent callers (`tests/unit/test_hardening.py`)
+- [ ] Load test: `scripts/load_test.py` is written but has not been run against a real deployment, so there are no throughput numbers yet
+- [ ] Failure tests still missing: language model down and slow responses end to end
+- [x] Runbook (`docs/runbook.md`, written from the code, not from a real incident)
+- [ ] Backup and restore of state, alerting plan
 
 ### Quality gates
 - [x] Evaluation set in CI with thresholds for the request parser (30 labelled cases; regression guard only)
