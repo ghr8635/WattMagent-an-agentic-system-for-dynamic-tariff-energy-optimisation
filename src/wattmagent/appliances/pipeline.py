@@ -104,10 +104,15 @@ def plan_appliances_safely(
             request_satisfied = False
             reasons.append(f"infeasible_request: {candidate.message}")
         else:
-            checked = verify_appliance_plan(inputs, candidate)
-            if checked.passed:
+            try:
+                checked: ApplianceReport | None = verify_appliance_plan(inputs, candidate)
+            except Exception as exc:  # noqa: BLE001  (a plan the verifier cannot read is unsafe)
+                checked = None
+                reasons.append(f"verifier_error: {type(exc).__name__}")
+                log.exception("verifier failed on appliance plan", extra={"request_id": rid})
+            if checked is not None and checked.passed:
                 plan, report = candidate, checked
-            else:
+            elif checked is not None:
                 reasons.append("verifier_rejected: " + ", ".join(checked.rules))
                 log.warning("verifier rejected appliance plan", extra={"request_id": rid})
 

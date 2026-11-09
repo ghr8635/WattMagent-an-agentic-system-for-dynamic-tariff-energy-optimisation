@@ -1,0 +1,33 @@
+name: Refresh pins
+
+# Manual job that produces the two pins the sandbox could not: a hash-locked requirements
+# file and the digest of the base image. It opens no pull request by itself; it uploads the
+# result as an artifact so a person reviews it, then commits it.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pins:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+      - run: uv python install 3.12
+      - name: Hash-locked runtime requirements
+        run: |
+          uv pip compile pyproject.toml --python-version 3.12 --generate-hashes \
+            --output-file requirements.lock
+      - name: Base image digest
+        run: |
+          docker pull python:3.12-slim
+          docker inspect --format '{{index .RepoDigests 0}}' python:3.12-slim | tee base-image-digest.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pins
+          path: |
+            requirements.lock
+            base-image-digest.txt
