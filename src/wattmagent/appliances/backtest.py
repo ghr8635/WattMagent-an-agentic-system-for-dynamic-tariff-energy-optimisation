@@ -18,12 +18,12 @@ from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime, tzinfo
 
-from wattmagent.appliances.baselines import cheapest_start, run_immediately
+from wattmagent.appliances.baselines import cheapest_start, run_immediately, self_consumption
 from wattmagent.appliances.household import Household, build_day_inputs
 from wattmagent.appliances.models import AppliancePlan, DayInputs
 from wattmagent.appliances.optimiser import plan_appliances
 from wattmagent.appliances.pipeline import AppliancePlanner, plan_appliances_safely
-from wattmagent.appliances.simulate import appliance_kw, plan_cost
+from wattmagent.appliances.simulate import appliance_kw, plan_bill
 from wattmagent.appliances.verifier import verify_appliance_plan
 from wattmagent.data.prices import PricePoint
 from wattmagent.safety.audit import AuditLog
@@ -68,7 +68,7 @@ def simulate_day(
     kw = appliance_kw(inputs, plan)
     valid = verify_appliance_plan(inputs, plan, compare_with_baseline=False).passed
     billed = replace(inputs, prices=list(actual))
-    return plan_cost(billed, kw), math.fsum(kw), valid
+    return plan_bill(billed, plan), math.fsum(kw), valid
 
 
 def run_appliance_backtest(
@@ -159,7 +159,9 @@ def run_appliance_backtest(
     return out
 
 
-def default_planners(audit: AuditLog | None = None) -> dict[str, AppliancePlanner]:
+def default_planners(
+    audit: AuditLog | None = None, with_battery: bool = False
+) -> dict[str, AppliancePlanner]:
     """Strategies in display order; the first is the baseline. With ``audit`` the optimiser runs
     through the safety pipeline, so every plan is verified and logged."""
 
@@ -167,11 +169,14 @@ def default_planners(audit: AuditLog | None = None) -> dict[str, AppliancePlanne
         return plan_appliances_safely(inputs, audit=audit).plan
 
     chosen: AppliancePlanner = milp if audit is not None else plan_appliances
-    return {
+    planners: dict[str, AppliancePlanner] = {
         "run_immediately": run_immediately,
         "cheapest_start": cheapest_start,
-        "milp_optimiser": chosen,
     }
+    if with_battery:  # only differs from run_immediately when the household has a battery
+        planners["self_consumption"] = self_consumption
+    planners["milp_optimiser"] = chosen
+    return planners
 
 
 def format_summary(results: Sequence[ApplianceSummary], baseline: str) -> str:

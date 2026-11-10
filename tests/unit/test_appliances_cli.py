@@ -54,3 +54,12 @@ def test_cli_with_csv_and_tariff(tmp_path: Path) -> None:
 def test_cli_rejects_a_missing_household(tmp_path: Path) -> None:
     with pytest.raises(FileNotFoundError):
         run("--household", str(tmp_path / "nope.toml"), "--synthetic")
+
+
+def test_cli_battery_household_shows_the_battery_strategy_and_its_assumption() -> None:
+    battery = EXAMPLE.parent / "example_battery.toml"
+    out = run("--household", str(battery), "--synthetic", "--days", "5", "--start", "2025-06-01")
+    assert "battery: 10 kWh" in out
+    assert "self_consumption" in out and "milp_optimiser" in out
+    assert "wear counted at 0.05 EUR/kWh discharged (ASSUMED)" in out
+    assert "0 fallbacks" in out

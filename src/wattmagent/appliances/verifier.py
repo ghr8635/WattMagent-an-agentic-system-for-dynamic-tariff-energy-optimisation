@@ -8,7 +8,10 @@ does from the plan's own power series and the physical tank model, then checks h
   and not colder at the end;
 - tank power within limits (and either off or full if the element does not modulate);
 - tank temperature inside the comfort band in every slot, and not colder at the end;
-- grid import (base load plus appliances minus own solar) within the connection limit;
+- battery within its power limits, never charging and discharging at once, stored energy inside
+  its range in every slot and not lower at the end, and never feeding the grid;
+- grid import (base load plus appliances plus battery minus own solar) within the connection
+  limit;
 - cost not worse than the "run immediately" baseline (when that baseline is itself valid).
 """
 
@@ -22,15 +25,18 @@ from wattmagent.appliances.baselines import run_immediately
 from wattmagent.appliances.models import AppliancePlan, CycleJob, DayInputs
 from wattmagent.appliances.simulate import (
     appliance_kw,
+    battery_net_kw,
     min_import_kw,
     place,
-    plan_cost,
+    plan_bill,
+    simulate_battery,
     simulate_building,
     simulate_tank,
 )
 
 _POWER_TOL_KW = 1e-6
 _TEMP_TOL_K = 1e-3
+_ENERGY_TOL_KWH = 1e-3
 _COST_REL_TOL = 1e-3
 _COST_ABS_TOL_EUR = 0.0005
 
@@ -47,6 +53,10 @@ class ApplianceRule(StrEnum):
     HEATPUMP_POWER = "heatpump_power"
     INDOOR_COMFORT = "indoor_comfort"
     INDOOR_END = "indoor_end"
+    BATTERY_POWER = "battery_power"  # over a limit, or charging and discharging at once
+    BATTERY_SOC = "battery_soc"  # stored energy outside its range
+    BATTERY_END = "battery_end"  # emptier at the end than at the start
+    BATTERY_EXPORT = "battery_export"  # discharging more than the house uses (into the grid)
     GRID_LIMIT = "grid_limit"
     COST = "cost_vs_baseline"
 
@@ -113,6 +123,72 @@ def _check_cycle(job: CycleJob, series: list[float], n: int) -> list[ApplianceVi
     return []
 
 
+def _check_battery(inputs: DayInputs, plan: AppliancePlan) -> list[ApplianceViolation]:
+    battery = inputs.battery
+    assert battery is not None
+    found: list[ApplianceViolation] = []
+    charge, discharge = plan.battery_charge_kw, plan.battery_discharge_kw
+    for t in range(inputs.slots):
+        ch, dis = charge[t], discharge[t]
+        if ch < -_POWER_TOL_KW or ch > battery.max_charge_kw + _POWER_TOL_KW:
+            found.append(
+                ApplianceViolation(
+                    ApplianceRule.BATTERY_POWER,
+                    f"battery charge {ch:.3f} kW outside 0..{battery.max_charge_kw:g} kW",
+                    t,
+                )
+            )
+        if dis < -_POWER_TOL_KW or dis > battery.max_discharge_kw + _POWER_TOL_KW:
+            found.append(
+                ApplianceViolation(
+                    ApplianceRule.BATTERY_POWER,
+                    f"battery discharge {dis:.3f} kW outside 0..{battery.max_discharge_kw:g} kW",
+                    t,
+                )
+            )
+        if min(ch, dis) > _POWER_TOL_KW:
+            found.append(
+                ApplianceViolation(
+                    ApplianceRule.BATTERY_POWER, "battery charges and discharges in one hour", t
+                )
+            )
+    stored = simulate_battery(inputs, charge, discharge)
+    for t, kwh in enumerate(stored):
+        if (
+            kwh < battery.soc_min_kwh - _ENERGY_TOL_KWH
+            or kwh > battery.capacity_kwh + _ENERGY_TOL_KWH
+        ):
+            found.append(
+                ApplianceViolation(
+                    ApplianceRule.BATTERY_SOC,
+                    f"battery holds {kwh:.2f} kWh, range "
+                    f"{battery.soc_min_kwh:.2f}-{battery.capacity_kwh:.2f} kWh",
+                    t,
+                )
+            )
+    if stored and stored[-1] < battery.soc_initial_kwh - _ENERGY_TOL_KWH:
+        found.append(
+            ApplianceViolation(
+                ApplianceRule.BATTERY_END,
+                f"battery ends at {stored[-1]:.2f} kWh, emptier than the start "
+                f"{battery.soc_initial_kwh:.2f} kWh",
+            )
+        )
+    appliances = appliance_kw(inputs, plan)
+    net = battery_net_kw(inputs, plan)
+    for t in range(inputs.slots):
+        if inputs.base_kw[t] + appliances[t] + net[t] < -_POWER_TOL_KW:
+            found.append(
+                ApplianceViolation(
+                    ApplianceRule.BATTERY_EXPORT,
+                    "battery discharges more than the house uses (battery energy would be "
+                    "exported)",
+                    t,
+                )
+            )
+    return found
+
+
 def _hard_checks(inputs: DayInputs, plan: AppliancePlan) -> list[ApplianceViolation]:
     n = inputs.slots
     found: list[ApplianceViolation] = []
@@ -128,8 +204,20 @@ def _hard_checks(inputs: DayInputs, plan: AppliancePlan) -> list[ApplianceViolat
         return [ApplianceViolation(ApplianceRule.SHAPE, "heat-pump series has the wrong length")]
     if inputs.building is None and any(abs(v) > _POWER_TOL_KW for v in plan.heatpump_kw):
         return [ApplianceViolation(ApplianceRule.SHAPE, "heat-pump power but no building")]
+    if inputs.battery is not None and (
+        len(plan.battery_charge_kw) != n or len(plan.battery_discharge_kw) != n
+    ):
+        return [ApplianceViolation(ApplianceRule.SHAPE, "battery series have the wrong length")]
+    if inputs.battery is None and any(
+        abs(v) > _POWER_TOL_KW for v in (*plan.battery_charge_kw, *plan.battery_discharge_kw)
+    ):
+        return [ApplianceViolation(ApplianceRule.SHAPE, "battery power but no battery")]
     everything = (
-        [v for s in plan.cycle_kw.values() for v in s] + list(plan.tank_kw) + list(plan.heatpump_kw)
+        [v for s in plan.cycle_kw.values() for v in s]
+        + list(plan.tank_kw)
+        + list(plan.heatpump_kw)
+        + list(plan.battery_charge_kw)
+        + list(plan.battery_discharge_kw)
     )
     if not all(math.isfinite(v) for v in everything):
         return [ApplianceViolation(ApplianceRule.NOT_FINITE, "plan contains NaN or infinity")]
@@ -202,9 +290,14 @@ def _hard_checks(inputs: DayInputs, plan: AppliancePlan) -> list[ApplianceViolat
                 )
             )
 
+    battery = inputs.battery
+    if battery is not None:
+        found += _check_battery(inputs, plan)
+
     if inputs.max_grid_kw is not None:
+        net = battery_net_kw(inputs, plan)
         for t, kw in enumerate(appliance_kw(inputs, plan)):
-            draw = min_import_kw(inputs, t, kw)
+            draw = min_import_kw(inputs, t, kw, net[t])
             if draw > inputs.max_grid_kw + _POWER_TOL_KW:
                 found.append(
                     ApplianceViolation(
@@ -228,12 +321,12 @@ def verify_appliance_plan(
     if found and found[0].rule in (ApplianceRule.SHAPE, ApplianceRule.NOT_FINITE):
         return ApplianceReport(tuple(found))
 
-    cost = plan_cost(inputs, appliance_kw(inputs, plan))
+    cost = plan_bill(inputs, plan)
     baseline_cost: float | None = None
     if compare_with_baseline:
         base = run_immediately(inputs)
         if not _hard_checks(inputs, base):  # only meaningful if the baseline is itself valid
-            baseline_cost = plan_cost(inputs, appliance_kw(inputs, base))
+            baseline_cost = plan_bill(inputs, base)
             if cost > baseline_cost * (1 + _COST_REL_TOL) + _COST_ABS_TOL_EUR:
                 found.append(
                     ApplianceViolation(

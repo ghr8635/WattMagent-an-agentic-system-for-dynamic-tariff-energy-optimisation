@@ -138,6 +138,51 @@ class BuildingSpec:
         return min(self.cop_max, max(self.cop_min, raw))
 
 
+@dataclass(frozen=True, slots=True)
+class BatterySpec:
+    """A stationary home battery (AC-coupled, one number for state of charge).
+
+    ``charge_kw`` and ``discharge_kw`` are AC power at the meter. Energy stored changes by
+    ``eta_c * charge`` and falls by ``discharge / eta_d`` each hour. ``wear_eur_per_kwh`` is
+    the cost put on every kWh discharged: a stand-in for the capital cost of the cycles used.
+    The battery never exports to the grid (only solar surplus is exported) and never charges
+    and discharges in the same hour.
+    """
+
+    name: str
+    capacity_kwh: float
+    max_charge_kw: float
+    max_discharge_kw: float
+    min_soc: float = 0.1  # share of capacity that is never used
+    initial_soc: float = 0.5  # share of capacity at the start of the day
+    charge_efficiency: float = 0.96
+    discharge_efficiency: float = 0.96
+    wear_eur_per_kwh: float = 0.05  # ASSUMPTION: depends on price, cycle life and depth of use
+
+    def __post_init__(self) -> None:
+        if min(self.capacity_kwh, self.max_charge_kw, self.max_discharge_kw) <= 0:
+            raise ValueError(f"{self.name}: capacity and power limits must be positive")
+        if not 0 <= self.min_soc < 1 or not self.min_soc <= self.initial_soc <= 1:
+            raise ValueError(f"{self.name}: need 0 <= min_soc < 1 and min_soc <= initial_soc <= 1")
+        if not (0 < self.charge_efficiency <= 1 and 0 < self.discharge_efficiency <= 1):
+            raise ValueError(f"{self.name}: efficiencies must be in (0, 1]")
+        if not math.isfinite(self.wear_eur_per_kwh) or self.wear_eur_per_kwh < 0:
+            raise ValueError(f"{self.name}: wear cost must be finite and not negative")
+
+    @property
+    def soc_min_kwh(self) -> float:
+        return self.min_soc * self.capacity_kwh
+
+    @property
+    def soc_initial_kwh(self) -> float:
+        return self.initial_soc * self.capacity_kwh
+
+
+def battery_step(spec: BatterySpec, soc_kwh: float, charge_kw: float, discharge_kw: float) -> float:
+    """Stored energy after one hour: the physical source of truth for the battery."""
+    return soc_kwh + spec.charge_efficiency * charge_kw - discharge_kw / spec.discharge_efficiency
+
+
 def building_step(spec: BuildingSpec, temp_c: float, heat_kw: float, outdoor_c: float) -> float:
     """Indoor temperature after one hour: the physical source of truth for the building."""
     return (
@@ -165,6 +210,7 @@ class DayInputs:
     outdoor_c: Sequence[float] = ()  # outdoor temperature per slot; required with a building
     pv_kw: Sequence[float] = ()  # rooftop generation per slot (expected, not measured)
     export_price_eur_kwh: float = 0.0  # what a kWh fed into the grid earns (before the cap below)
+    battery: BatterySpec | None = None
 
     def __post_init__(self) -> None:
         n = len(self.prices)
@@ -213,6 +259,11 @@ class DayInputs:
         return any(v > 0 for v in self.pv_kw)
 
     @property
+    def has_grid_balance(self) -> bool:
+        """Whether the day is planned on the household's whole net grid bill (solar or battery)."""
+        return self.has_solar or self.battery is not None
+
+    @property
     def pv(self) -> list[float]:
         return list(self.pv_kw) if self.pv_kw else [0.0] * self.slots
 
@@ -234,8 +285,12 @@ class AppliancePlan:
     cycle_kw: dict[str, list[float]] = field(default_factory=dict)  # per job name, per slot
     tank_kw: list[float] = field(default_factory=list)
     heatpump_kw: list[float] = field(default_factory=list)  # ELECTRIC power; heat = kW x COP
+    battery_charge_kw: list[float] = field(default_factory=list)  # AC power into the battery
+    battery_discharge_kw: list[float] = field(default_factory=list)  # AC power out of it
     message: str = ""
-    planned_cost_eur: float | None = None  # appliance energy on the planner's prices
+    planned_cost_eur: float | None = (
+        None  # on the planner's prices (whole net bill with solar/battery)
+    )
 
     @property
     def feasible(self) -> bool:

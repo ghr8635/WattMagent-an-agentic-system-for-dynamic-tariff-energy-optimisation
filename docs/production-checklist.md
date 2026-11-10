@@ -22,6 +22,7 @@ real customers or devices.
 ### Safety and reliability
 - [ ] Deterministic fallback plan when the LLM or API is unavailable (done for optimiser failure,
       verifier rejection and stale prices; LLM and API cases arrive with the agent and API)
+- [x] Home battery planned and verified independently (stored energy, limits, no overlap, no grid export, end level); each safety constraint was removed in turn to confirm a test fails (`tests/unit/test_battery.py`)
 - [x] Plan verifier (independent of the optimiser): target, power limits, plug-in hours, executability,
       battery end state, cost vs baseline; attacked by tests with deliberately broken plans
 - [x] Audit log: one structured record per decision (JSON Lines), no personal data

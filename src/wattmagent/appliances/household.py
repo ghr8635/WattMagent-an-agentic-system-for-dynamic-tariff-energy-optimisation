@@ -17,6 +17,9 @@
     [heatpump]
     appliance = "heat_pump_efficient_house"   # needs outdoor temperatures to be planned
 
+    [battery]
+    appliance = "home_battery_10kwh"          # works on prices alone; solar adds surplus to store
+
     [catalogue.cycle.my_washer]     # optional: add your own appliance
     profile_kw = [1.0, 0.6]
 
@@ -33,18 +36,27 @@ from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from wattmagent.appliances.catalogue import (
+    BatteryModel,
     Catalogue,
     ConfigError,
     CycleModel,
     HeatPumpModel,
     TankModel,
     default_catalogue,
+    parse_battery,
     parse_catalogue,
     parse_cycle,
     parse_heatpump,
     parse_tank,
 )
-from wattmagent.appliances.models import BuildingSpec, CycleJob, CycleSpec, DayInputs, TankSpec
+from wattmagent.appliances.models import (
+    BatterySpec,
+    BuildingSpec,
+    CycleJob,
+    CycleSpec,
+    DayInputs,
+    TankSpec,
+)
 from wattmagent.data.load import synthetic_load_kw
 
 _TOP = {
@@ -56,6 +68,7 @@ _TOP = {
     "tank",
     "heatpump",
     "solar",
+    "battery",
     "catalogue",
 }
 _SOLAR_KEYS = {"kwp", "performance_ratio", "export_price_eur_kwh"}
@@ -97,6 +110,7 @@ class Household:
     tank: TankModel | None = None
     heatpump: HeatPumpModel | None = None
     solar: SolarModel | None = None
+    battery: BatteryModel | None = None
     notes: list[str] = field(default_factory=list)
 
 
@@ -219,6 +233,25 @@ def parse_household(raw: Mapping[str, Any], catalogue: Catalogue | None = None) 
             raise ConfigError("solar.export_price_eur_kwh: cannot be negative")
         solar = SolarModel(kwp, ratio, export)
 
+    battery: BatteryModel | None = None
+    bat_table = raw.get("battery")
+    if bat_table is not None:
+        if not isinstance(bat_table, Mapping):
+            raise ConfigError("battery: expected a table")
+        bat_key = bat_table.get("appliance")
+        if not isinstance(bat_key, str) or bat_key not in cat.batteries:
+            known = ", ".join(sorted(cat.batteries))
+            raise ConfigError(f"battery: unknown appliance {bat_key!r}; known batteries: {known}")
+        merged_b: dict[str, Any] = {
+            k: v for k, v in asdict(cat.batteries[bat_key]).items() if k != "key"
+        }
+        merged_b.update({k: v for k, v in bat_table.items() if k != "appliance"})
+        battery = parse_battery(bat_key, merged_b)
+        try:
+            battery_spec(battery)
+        except ValueError as exc:
+            raise ConfigError(f"battery: {exc}") from exc
+
     return Household(
         name=str(raw.get("name", "household")),
         timezone=tz,
@@ -228,6 +261,7 @@ def parse_household(raw: Mapping[str, Any], catalogue: Catalogue | None = None) 
         tank=tank,
         heatpump=heatpump,
         solar=solar,
+        battery=battery,
     )
 
 
@@ -250,6 +284,20 @@ def tank_spec(m: TankModel) -> TankSpec:
         loss_kw_per_k=m.loss_kw_per_k,
         efficiency=m.efficiency,
         modulating=m.modulating,
+    )
+
+
+def battery_spec(m: BatteryModel) -> BatterySpec:
+    return BatterySpec(
+        name=m.key,
+        capacity_kwh=m.capacity_kwh,
+        max_charge_kw=m.max_charge_kw,
+        max_discharge_kw=m.max_discharge_kw,
+        min_soc=m.min_soc,
+        initial_soc=m.initial_soc,
+        charge_efficiency=m.charge_efficiency,
+        discharge_efficiency=m.discharge_efficiency,
+        wear_eur_per_kwh=m.wear_eur_per_kwh,
     )
 
 
@@ -344,5 +392,6 @@ def build_day_inputs(
         if pv and household.solar
         else 0.0,
         building=building,
+        battery=battery_spec(household.battery) if household.battery is not None else None,
         outdoor_c=list(outdoor_c) if building is not None and outdoor_c is not None else (),
     )

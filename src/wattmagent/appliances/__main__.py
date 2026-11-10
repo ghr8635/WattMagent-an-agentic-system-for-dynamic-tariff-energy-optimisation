@@ -116,17 +116,25 @@ def main() -> None:
         f"{household.tank.key if household.tank else 'none'}, "
         f"heat pump: {household.heatpump.key if household.heatpump else 'none'}, "
         f"solar: {f'{household.solar.kwp:g} kWp' if household.solar else 'none'}, "
+        f"battery: {f'{household.battery.capacity_kwh:g} kWh' if household.battery else 'none'}, "
         f"connection limit: {household.max_grid_kw or 'none'} kW"
     )
     if weather_label:
         print(f"# {weather_label}")
     if yield_line:
         print(yield_line)
-    scope = (
-        "whole net grid bill: base load included, own solar used first, surplus exported"
-        if household.solar
-        else "appliance energy only, base load excluded"
-    )
+    if household.solar or household.battery:
+        parts = ["whole net grid bill: base load included"]
+        if household.solar:
+            parts.append("own solar used first, surplus exported")
+        if household.battery:
+            parts.append(
+                f"battery wear counted at {household.battery.wear_eur_per_kwh:g} EUR/kWh "
+                "discharged (ASSUMED)"
+            )
+        scope = ", ".join(parts)
+    else:
+        scope = "appliance energy only, base load excluded"
     print(f"# cost basis: {basis}; cost = {scope}")
     print(
         "# appliance figures are ILLUSTRATIVE ASSUMPTIONS; hot-water use and base load are "
@@ -136,7 +144,12 @@ def main() -> None:
         print(banner)
     audit = InMemoryAuditLog()
     results = run_appliance_backtest(
-        prices, household, default_planners(audit), tz=tz, outdoor=outdoor, radiation=radiation
+        prices,
+        household,
+        default_planners(audit, with_battery=household.battery is not None),
+        tz=tz,
+        outdoor=outdoor,
+        radiation=radiation,
     )
     print(format_summary(results, baseline="run_immediately"))
     fallbacks = [e for e in audit.entries if e["decision"] == "fallback"]
