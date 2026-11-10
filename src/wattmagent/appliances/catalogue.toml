@@ -81,3 +81,31 @@ cop_at_7c = 3.2
 cop_slope_per_k = 0.07
 cop_min = 1.8
 cop_max = 4.8
+
+# ---- stationary batteries ------------------------------------------------------------------
+# Power is AC at the meter. min_soc and initial_soc are shares of capacity. wear_eur_per_kwh is
+# the cost put on every kWh discharged, a stand-in for the capital cost of the cycles used: it
+# is the number that decides whether price arbitrage pays, so change it for your own device
+# (price per kWh of capacity divided by lifetime throughput gives a first estimate).
+
+[battery.home_battery_5kwh]
+description = "Home battery, 5 kWh usable class, 2.5 kW"
+capacity_kwh = 5.0
+max_charge_kw = 2.5
+max_discharge_kw = 2.5
+min_soc = 0.1
+initial_soc = 0.5
+charge_efficiency = 0.96
+discharge_efficiency = 0.96
+wear_eur_per_kwh = 0.05
+
+[battery.home_battery_10kwh]
+description = "Home battery, 10 kWh class, 5 kW"
+capacity_kwh = 10.0
+max_charge_kw = 5.0
+max_discharge_kw = 5.0
+min_soc = 0.1
+initial_soc = 0.5
+charge_efficiency = 0.96
+discharge_efficiency = 0.96
+wear_eur_per_kwh = 0.05

@@ -1,6 +1,6 @@
-# Appliances: shiftable cycles and the hot-water tank
+# Appliances: shiftable cycles, tank, heat pump, solar and battery
 
-Status: **slice 3**. Four behaviour classes, one optimiser, one independent verifier, a TOML
+Status: **slice 4**. Five behaviour classes, one optimiser, one independent verifier, a TOML
 household file and a small extensible catalogue. It is **not yet connected to the agent or the
 API**, and it is planned separately from the EV and battery (see "Limits").
 
@@ -8,7 +8,8 @@ API**, and it is planned separately from the EV and battery (see "Limits").
 
 | Class | Examples | Model | In this slice |
 |---|---|---|---|
-| Interruptible, power-flexible | EV, home battery | MILP in `optimiser/household.py` | done earlier |
+| Interruptible, power-flexible | EV | MILP in `optimiser/household.py` | done earlier (separate planner) |
+| **Stationary battery** | home battery | stored energy, charge/discharge limits and losses, wear cost, no grid export | **done** (inside the appliance planner; see below) |
 | **Shiftable cycle** | washing machine, dryer, dishwasher | fixed hourly power profile, runs once, no pause, inside a window | **done** |
 | **Thermal store with a comfort band** | electric water heater | one-node tank, temperature band, on/off or modulating element | **done** |
 | **Thermal store, building mass** | air heat pump | one-node building, comfort band, COP from the outdoor temperature | **done** (heat pump; resistive heating and AC not started) |
@@ -95,6 +96,65 @@ folds in tilt, orientation, temperature and inverter losses into one assumed num
   (Germany: roughly 900-1,100 kWh/kWp a year on a good roof) **only over a full year**; a winter
   run says nothing about the annual figure.
 
+## Home battery
+
+A stationary battery stores energy and gives it back later: it buys in cheap hours (or keeps
+surplus solar) and covers the house in dear hours.
+
+- **Model.** Charge and discharge power at the meter (AC), losses on both (0.96 each, about 92%
+  round trip), stored energy between a floor (10%) and the capacity, starting at 50%.
+  `stored[t] = stored[t-1] + eta_c * charge[t] - discharge[t] / eta_d`.
+- **Rules the plan must obey.** Never charge and discharge in the same hour (a binary variable;
+  without it, a very negative price would "pay" the optimiser to burn energy through the losses),
+  never end the day emptier than it started, never discharge more than the house uses (the
+  battery does not export; only solar surplus is exported), and charging counts against the
+  connection limit.
+- **Wear cost.** Every kWh discharged carries `wear_eur_per_kwh` (0.05 in the catalogue). This is
+  a stand-in for the price of the cycles used and **it decides whether the battery pays**: see the
+  sensitivity table. It is an assumption, not a measured figure for any product.
+- **Cost basis.** With a battery (or solar) the cost is the household's whole net grid bill,
+  base load and wear included. Such results are not comparable with "appliance energy only".
+- **Works without solar** (price arbitrage on the day-ahead prices); with solar it also stores
+  the midday surplus for the evening.
+- **Baseline.** `self_consumption` is `run_immediately` plus the usual rule: store solar surplus,
+  cover the house when short, ignore prices, never dip below the starting level (so every day
+  ends no emptier than it began, as the optimiser must). The optimiser's gain over it is the
+  value of looking at prices; its gain over `run_immediately` is the whole battery.
+- **Not planned from a request yet.** The agent plans only the cycles a request names, so the
+  battery is part of the backtest and the library, not of the API.
+
+Synthetic run (`docs/results/appliances_battery_synthetic.txt`, 365 days, seed 7, full house with
+a 10 kWh battery at 0.05 EUR/kWh wear, perfect foresight):
+
+| Strategy | Mean net cost per day | vs run immediately |
+|---|---|---|
+| run_immediately | 2.700 EUR | |
+| cheapest_start | 2.609 EUR | -3.4% |
+| self_consumption | 2.633 EUR | -2.5% |
+| milp_optimiser | 1.957 EUR | -27.5% |
+
+The same house **without** the battery: optimiser 2.249 EUR/day. So the battery's own gain is
+0.29 EUR/day here, and it depends strongly on its wear cost
+(`docs/results/battery_sensitivity_synthetic.txt`, `scripts/battery_sensitivity.py`):
+
+| Wear cost (EUR per kWh discharged) | Optimiser gain (EUR/day) | Price-blind rule gain (EUR/day) |
+|---|---|---|
+| 0.00 | 0.72 | 0.15 |
+| 0.02 | 0.52 | 0.12 |
+| 0.05 | 0.29 | 0.07 |
+| 0.10 | 0.06 | **-0.02** |
+| 0.15 | 0.00 | -0.11 |
+| 0.20 | 0.00 | -0.20 |
+
+Size matters too (power set to half the capacity in kW, wear 0.05): 5 kWh gains 0.18 EUR/day,
+10 kWh 0.29 and 15 kWh 0.35, so each extra kWh adds less than the one before.
+
+Read it this way: on these **synthetic** prices the battery only pays if its wear cost is low,
+and from about 0.10 EUR/kWh the optimiser simply leaves it idle while the price-blind rule loses
+money. A realistic wear cost (device price divided by lifetime throughput) can easily be in that
+range, so **this result may not carry over to a real battery**. Run the script on real prices
+(`--csv` and `--weather-json`) before drawing any conclusion; none is recorded here yet.
+
 ### Real-data run (prices and weather)
 
 `docs/results/appliances_full_real_prices.txt`: the full-house example on real SMARD prices and
@@ -152,6 +212,8 @@ python -m wattmagent.appliances --household config/households/example.toml \
     --csv data/prices_hourly_utc.csv --tariff config/tariffs/illustrative_de_household.toml
 python -m wattmagent.appliances --household config/households/example.toml --synthetic --days 60
 python -m wattmagent.appliances --household config/households/example_full.toml --synthetic --start 2025-06-01
+python -m wattmagent.appliances --household config/households/example_battery.toml --synthetic --days 365 --seed 7
+python scripts/battery_sensitivity.py --days 365 --seed 7     # how much the wear cost matters
 ```
 
 `docs/results/appliances_*.txt` (cycles+tank, heat pump, full house in winter and summer) are **synthetic** runs (labelled in its header). A
@@ -172,17 +234,23 @@ run on the real SMARD series is done on your machine and is not recorded here ye
   element, a breached connection limit, a plan dearer than the baseline.
 - The pipeline falls back on a crashing or lying planner, reports an unreachable comfort band,
   and refuses when even the fallback is unsafe.
+- Battery: the optimiser's cost equals the independent recomputation on random price days;
+  stored energy stays in range and ends no lower; charging and discharging never overlap (even
+  when paid to import); battery energy is never exported; charging counts against the connection
+  limit; a battery never makes the bill worse than none; the verifier flags overpowered, overlapping,
+  overfull, over-drained, end-empty and exporting plans. Each safety constraint was removed in turn
+  to check that a test fails.
 - Daylight-saving days of 23 and 25 hours map windows to the right slots.
 
 ## Limits (honest)
 
 - **Every appliance figure is an assumption**, not a measurement of any product.
 - **Hourly slots.** A two-hour wash is two averaged hours; real programmes vary within the hour.
-- **Planned separately from the EV and battery.** The EV and battery are not part of
-  `DayInputs`, so nothing here shares a connection limit with them, and a battery could shift
-  appliance energy further. The base load enters only through the connection limit.
+- **Planned separately from the EV.** The EV is not part of `DayInputs`, so nothing here shares
+  a connection limit with it. The base load enters the cost only with solar or a battery, and
+  otherwise only through the connection limit.
 - **Solar is a deterministic estimate.** Radiation is the day's actual value (perfect foresight);
-  no shading, snow, panel temperature or inverter clipping, and no battery to store the surplus.
+  no shading, snow, panel temperature or inverter clipping.
 - **One-node building.** No separate rooms, walls or floor heating, no solar or internal gains,
   no defrost or minimum run time, a straight-line COP, and heating only (no cooling).
 - **One-node tank.** No stratification, no weekly high-temperature (legionella) cycle, no
@@ -192,4 +260,7 @@ run on the real SMARD series is done on your machine and is not recorded here ye
 - **Prices are assumed known for the whole day**, as in the EV backtest; the publication time of
   the next day's prices is unverified.
 - **Windows are the user's.** Nothing here learns when a machine is actually loaded.
+- **Battery:** one stored-energy number (no cell, temperature or ageing model beyond the wear
+  cost), constant efficiencies, no battery-to-grid trading, a day-by-day horizon (it must end
+  no emptier than it began, so it cannot carry value across days), and no real device figures.
 - No device control: the output is a plan, never a command to a machine.

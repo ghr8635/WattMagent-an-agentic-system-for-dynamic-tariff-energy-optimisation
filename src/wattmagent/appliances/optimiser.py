@@ -6,8 +6,10 @@ Unknowns
 - ``z[t]``     element duty in slot ``t`` (binary for an on/off element, 0..1 if modulating)
 - ``T[t]``     tank temperature at the end of slot ``t`` (inside the comfort band)
 - ``Q[t]``, ``Tb[t]``  heat-pump heat (thermal kW, 0..max) and indoor temperature (comfort band)
-- ``g[t]``, ``x[t]``, ``c[t]``  grid import, export and curtailed solar (only with solar):
-  ``g - x - c = base + appliances - solar``, cost ``price g - export_value x``
+- ``ch[t]``, ``dis[t]``, ``soc[t]``, ``u[t]``  battery charge and discharge (AC kW), stored energy
+  (kWh) and a binary that stops charging and discharging in the same hour
+- ``g[t]``, ``x[t]``, ``c[t]``  grid import, export and curtailed solar (with solar or a battery):
+  ``g - x - c = base + appliances + ch - dis - solar``, cost ``price g - export_value x``
 
 Model
 
@@ -19,11 +21,15 @@ Model
 
     Tb[t] = (1 - UA/Cb) Tb[t-1] + Q[t]/Cb + UA T_out[t]/Cb,  cost price[t] * Q[t] / COP[t]
 
+    soc[t] = soc[t-1] + eta_c ch[t] - dis[t] / eta_d,  soc in [floor, capacity],
+    soc[last] >= soc[-1]  (the start level)
+    ch <= Pc u,  dis <= Pd (1 - u),  cost += wear * dis,  no export of battery energy (x <= solar)
+
 (COP depends on the known outdoor temperature, so this stays linear; the heat-pump part is a
 plain LP). With ``a = 1 - loss / C`` and ``C`` the tank heat capacity. A cycle is one block
 of ``y``, so it cannot be paused or split: that is what "shiftable cycle" means. Without solar,
 base load is a constant, left out of the cost, and matters only for the connection limit. With
-solar the cost is the household's whole net grid bill, base load included.
+solar or a battery the cost is the household's whole net grid bill, base load included.
 """
 
 from __future__ import annotations
@@ -63,11 +69,18 @@ def plan_appliances(inputs: DayInputs) -> AppliancePlan:
     b0 = q0 + n
     if building is not None:
         nv += 2 * n
-    solar = inputs.has_solar
-    g0 = nv  # grid import (n), export (n), curtailment (n): only with solar
+    battery = inputs.battery
+    ch0 = nv  # battery charge (n), discharge (n), stored energy (n), charging flag (n)
+    dis0 = ch0 + n
+    s0 = dis0 + n
+    u0 = s0 + n
+    if battery is not None:
+        nv += 4 * n
+    balance = inputs.has_grid_balance  # solar or a battery: plan the whole net grid bill
+    g0 = nv  # grid import (n), export (n), curtailment (n): only with a balance
     x0 = g0 + n
     c0 = x0 + n
-    if solar:
+    if balance:
         nv += 3 * n
     if nv == 0:
         return AppliancePlan(PlanStatus.OPTIMAL, planned_cost_eur=0.0)
@@ -94,6 +107,14 @@ def plan_appliances(inputs: DayInputs) -> AppliancePlan:
         if building is not None:
             row[q0 + t] = 1.0 / cop[t]
         return row
+
+    if battery is not None:
+        ub[ch0 : ch0 + n] = battery.max_charge_kw
+        ub[dis0 : dis0 + n] = battery.max_discharge_kw
+        lb[s0 : s0 + n] = battery.soc_min_kwh
+        ub[s0 : s0 + n] = battery.capacity_kwh
+        lb[s0 + n - 1] = max(battery.soc_min_kwh, battery.soc_initial_kwh)  # not emptier at the end
+        integrality[u0 : u0 + n] = 1
 
     if building is not None:
         cost[q0 : q0 + n] = prices / np.asarray(cop)
@@ -152,11 +173,35 @@ def plan_appliances(inputs: DayInputs) -> AppliancePlan:
             eq_rows.append(row)
             eq_rhs.append(rhs)
 
+    if battery is not None:
+        eta_c, eta_d = battery.charge_efficiency, battery.discharge_efficiency
+        for t in range(n):
+            row = np.zeros(nv)
+            row[s0 + t] = 1.0
+            if t > 0:
+                row[s0 + t - 1] = -1.0
+            row[ch0 + t] = -eta_c
+            row[dis0 + t] = 1.0 / eta_d
+            eq_rows.append(row)
+            eq_rhs.append(battery.soc_initial_kwh if t == 0 else 0.0)
+            no_swap = np.zeros(nv)  # charge only when the flag is 1 ...
+            no_swap[ch0 + t] = 1.0
+            no_swap[u0 + t] = -battery.max_charge_kw
+            ub_rows.append(no_swap)
+            ub_rhs.append(0.0)
+            only_one = np.zeros(nv)  # ... discharge only when it is 0
+            only_one[dis0 + t] = 1.0
+            only_one[u0 + t] = battery.max_discharge_kw
+            ub_rows.append(only_one)
+            ub_rhs.append(battery.max_discharge_kw)
+
     base = inputs.base_kw
-    if solar:
+    if balance:
         pv = inputs.pv
         export = inputs.export_value
         cost[:g0] = 0.0  # appliance energy is paid for through the grid import below
+        if battery is not None:
+            cost[dis0 : dis0 + n] = battery.wear_eur_per_kwh
         cost[g0 : g0 + n] = prices
         cost[x0 : x0 + n] = -np.asarray(export)
         ub[g0 : g0 + n] = inputs.max_grid_kw if inputs.max_grid_kw is not None else np.inf
@@ -164,6 +209,9 @@ def plan_appliances(inputs: DayInputs) -> AppliancePlan:
         ub[c0 : c0 + n] = pv
         for t in range(n):  # grid import - export - curtailed solar = demand - solar
             row = -load_row(t)
+            if battery is not None:
+                row[ch0 + t] = -1.0
+                row[dis0 + t] = 1.0
             row[g0 + t] = 1.0
             row[x0 + t] = -1.0
             row[c0 + t] = -1.0
@@ -214,6 +262,17 @@ def plan_appliances(inputs: DayInputs) -> AppliancePlan:
     if building is not None:
         heat = np.clip(sol[q0 : q0 + n], 0.0, building.max_heat_kw)
         heatpump_kw = [0.0 if h < _NOISE else float(h) / cop[t] for t, h in enumerate(heat)]
+    charge_kw: list[float] = []
+    discharge_kw: list[float] = []
+    if battery is not None:
+        charge_kw = [0.0 if v < _NOISE else float(v) for v in sol[ch0 : ch0 + n]]
+        discharge_kw = [0.0 if v < _NOISE else float(v) for v in sol[dis0 : dis0 + n]]
     return AppliancePlan(
-        PlanStatus.OPTIMAL, cycle_kw, tank_kw, heatpump_kw, planned_cost_eur=float(res.fun)
+        PlanStatus.OPTIMAL,
+        cycle_kw,
+        tank_kw,
+        heatpump_kw,
+        battery_charge_kw=charge_kw,
+        battery_discharge_kw=discharge_kw,
+        planned_cost_eur=float(res.fun),
     )

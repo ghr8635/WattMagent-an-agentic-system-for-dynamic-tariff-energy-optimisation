@@ -1,6 +1,8 @@
 """Rule-based planners: the floors the optimiser has to beat.
 
 - ``run_immediately``: every cycle at its earliest start, tank on a simple thermostat;
+- ``self_consumption``: ``run_immediately`` plus a battery that stores solar surplus and covers
+  the house when short, ignoring prices (only differs from it when there is a battery);
 - ``cheapest_start``: every cycle at the cheapest start for that cycle alone (on the net bill
   when there is solar; ignores the grid limit and other cycles), tank on the same thermostat,
   heat pump on the thrifty one.
@@ -14,15 +16,17 @@ from __future__ import annotations
 
 import math
 from collections.abc import Callable
+from dataclasses import replace
 
 from wattmagent.appliances.models import (
     AppliancePlan,
     CycleJob,
     DayInputs,
+    battery_step,
     building_step,
     tank_step,
 )
-from wattmagent.appliances.simulate import place, plan_cost
+from wattmagent.appliances.simulate import appliance_kw, place, plan_cost
 from wattmagent.planning.household import PlanStatus
 
 _EPS = 1e-9
@@ -106,8 +110,14 @@ def _plan(
 ) -> AppliancePlan:
     n = inputs.slots
     cycles = {j.spec.name: place(j.spec.profile_kw, start_of(j), n) for j in inputs.jobs}
+    idle = [0.0] * n if inputs.battery is not None else []  # these rules leave the battery alone
     return AppliancePlan(
-        PlanStatus.RULE, cycles, thermostat(inputs), heatpump_thermostat(inputs, thrifty=thrifty)
+        PlanStatus.RULE,
+        cycles,
+        thermostat(inputs),
+        heatpump_thermostat(inputs, thrifty=thrifty),
+        battery_charge_kw=list(idle),
+        battery_discharge_kw=list(idle),
     )
 
 
@@ -120,7 +130,7 @@ def cheapest_start(inputs: DayInputs) -> AppliancePlan:
         profile = job.spec.profile_kw
 
         def cost(s: int) -> float:
-            if inputs.has_solar:  # judge the start on the net bill, so a sunny hour counts
+            if inputs.has_grid_balance:  # judge the start on the net bill, so a sunny hour counts
                 return plan_cost(inputs, place(profile, s, inputs.slots))
             return sum(inputs.prices[s + i] * kw for i, kw in enumerate(profile))
 
@@ -131,3 +141,37 @@ def cheapest_start(inputs: DayInputs) -> AppliancePlan:
         return best
 
     return _plan(inputs, start, thrifty=True)
+
+
+def self_consumption(inputs: DayInputs) -> AppliancePlan:
+    """What a typical home battery does: store solar surplus, cover the house when short.
+
+    The appliances run as in ``run_immediately``, so the difference to that baseline is the
+    battery alone. The battery charges only from surplus solar and discharges only to cover
+    the house's own demand, never below the level it started the day with (so every day ends
+    no emptier than it began, the same rule the optimiser obeys). It ignores prices.
+    """
+    plan = run_immediately(inputs)
+    battery = inputs.battery
+    if battery is None:
+        return plan
+    n = inputs.slots
+    appliances = appliance_kw(inputs, plan)
+    base, pv = inputs.base_kw, inputs.pv
+    floor = max(battery.soc_min_kwh, battery.soc_initial_kwh)
+    stored = battery.soc_initial_kwh
+    charge: list[float] = []
+    discharge: list[float] = []
+    for t in range(n):
+        net = base[t] + appliances[t] - pv[t]  # positive: the house needs grid power
+        ch = dis = 0.0
+        if net < 0:  # surplus solar
+            room = (battery.capacity_kwh - stored) / battery.charge_efficiency
+            ch = min(-net, battery.max_charge_kw, max(room, 0.0))
+        elif net > 0:
+            available = max(stored - floor, 0.0) * battery.discharge_efficiency
+            dis = min(net, battery.max_discharge_kw, available)
+        stored = battery_step(battery, stored, ch, dis)
+        charge.append(ch)
+        discharge.append(dis)
+    return replace(plan, battery_charge_kw=charge, battery_discharge_kw=discharge)

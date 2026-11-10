@@ -1,0 +1,20 @@
+# SYNTHETIC prices and weather (seed=7), not market or weather data
+# spot prices; cost = whole net grid bill; perfect foresight of prices and weather
+# wear cost and battery size are ASSUMPTIONS; the gain is the battery's own, i.e.
+# household without battery minus the same household with it, EUR per day
+
+ wear EUR/kWh  optimiser gain  self-cons gain  optimiser cost
+         0.00          0.7175          0.1541          1.5312
+         0.02          0.5164          0.1191          1.7323
+         0.05          0.2918          0.0667          1.9569
+         0.10          0.0581         -0.0207          2.1906
+         0.15          0.0007         -0.1081          2.2480
+         0.20          0.0000         -0.1954          2.2487
+
+ capacity kWh  optimiser gain  self-cons gain  optimiser cost
+          5.0          0.1783          0.0601          2.0704
+         10.0          0.2918          0.0667          1.9569
+         15.0          0.3467          0.0132          1.9020
+
+# household without battery: optimiser 2.2487 EUR/day
+# capacity rows keep power at half the capacity in kW and the wear cost of the file

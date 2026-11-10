@@ -2,8 +2,8 @@
 
 WattMagent plans when a household should use electricity, so flexible loads run in cheap
 hours. Today that means an EV and a home battery, plus washing machine, dryer, dishwasher,
-hot-water tank, an air heat pump and rooftop solar (separately planned), on German day-ahead prices; forecasting
-and a battery for the solar surplus are not built yet. It sits on top of existing dynamic tariffs and home
+hot-water tank, an air heat pump, rooftop solar and a home battery (separately planned), on German
+day-ahead prices; forecasting is not built yet. It sits on top of existing dynamic tariffs and home
 automation instead of replacing them.
 
 You tell it what you need in plain language ("80% by 7am, not before 22:00"). It returns a
@@ -55,6 +55,7 @@ schedule, checks that schedule independently, and explains it in a few sentences
 | Weather feed (Open-Meteo archive: temperature, solar radiation) | done; checked against a real reply and a 1,036-day fetch; forecast endpoint **unverified** |
 | Heat pump (building mass as storage, COP from outdoor temperature), optimiser + verifier + fallback | done, tested, **synthetic results only**; the gain depends strongly on the assumed thermal mass (`docs/appliances.md`) |
 | Rooftop solar (radiation -> generation, own use, export/curtail, net-bill cost), verified independently | done, tested; on real prices and weather over 1,035 days the optimiser's cost was 23.0% below running immediately (16.9% below a price- and solar-aware rule), model yield about 1,008 kWh/kWp a year; **not household savings** (assumed appliances, export price, synthetic base load, perfect foresight) |
+| Home battery (price arbitrage and solar surplus, losses, wear cost, no grid export), optimiser + verifier + fallback | done, tested; **synthetic results only**: the gain is 0.29 EUR/day at an assumed 0.05 EUR/kWh wear cost and vanishes above about 0.10-0.15 (`docs/appliances.md`); not yet planned from API requests |
 | Plain-language appliance requests through the API ("run the dishwasher before 8pm"): deterministic parser, same safety pipeline, tested | done; cycles only (tank, heat pump and solar need a verified weather forecast); no replanning |
 | Fixed-load profiles, forecasting | not started |
 | Deployment to a host, rollback, load and failure tests, runbook | `deploy/deploy.sh` is written but untested; the rest not started |
