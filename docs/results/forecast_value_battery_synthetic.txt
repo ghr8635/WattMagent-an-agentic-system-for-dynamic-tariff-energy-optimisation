@@ -1,0 +1,12 @@
+# SYNTHETIC prices and weather (seed=7), not market or weather data
+# household: Example house with heat pump, solar and battery; cost = whole net grid bill, spot prices only
+# planner sees a sun forecast; bill and safety check use the true sun; prices known
+# 'regret' = optimiser cost with the forecast minus with perfect foresight, same days
+
+forecast                   MAE W/m2   bias  days  optimiser  perfect  regret regret %    valid
+persistence (yesterday)          42      0   364     1.9930   1.9559  0.0372     1.9%  364/364
+                            run_immediately 2.6964; cheapest_start 2.6062; optimiser -26.1% vs run_immediately
+mean of last 3 days              50      0   364     1.9982   1.9559  0.0423     2.2%  364/364
+                            run_immediately 2.6964; cheapest_start 2.6058; optimiser -25.9% vs run_immediately
+blind (assumes no sun)          188   -188   364     2.0972   1.9559  0.1413     7.2%  364/364
+                            run_immediately 2.6964; cheapest_start 2.5917; optimiser -22.2% vs run_immediately

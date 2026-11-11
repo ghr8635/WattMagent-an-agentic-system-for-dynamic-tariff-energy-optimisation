@@ -4,14 +4,14 @@
 
 | Layer | Responsibility | State |
 |---|---|---|
-| `data` | Price series: types, synthetic generator, CSV loader | done |
+| `data` | Price series: types, synthetic generator, CSV loader; weather (Open-Meteo archive); simple forecasts from past data (`forecast.py`) | done |
 | `devices` | Physics of each device; the simulator is the source of truth | EV, battery done |
 | `tariff` | Spot price to all-in household price; every component sourced and dated | done |
 | `planning` | Planners: (prices seen, load, device specs) -> kW schedules; plan status | EV baselines, household rule planners done |
 | `optimiser` | MILP (HiGHS via SciPy): EV + battery, one planning day | done |
 | `safety` | Verifier, price-freshness check, fallback plan, audit log; the only path to an executable plan | done |
 | `backtest` | Replay a price series; bill schedules on *actual* prices (EV-only and whole-household) | done |
-| `appliances` | Shiftable cycles, a hot-water tank, a heat pump on building mass, rooftop solar, a home battery and fixed loads: models, MILP, baselines, own verifier and safe pipeline, TOML households and catalogue, backtest (`docs/appliances.md`) | slices 1-5 done; not wired into `graph` or `api` yet |
+| `appliances` | Shiftable cycles, a hot-water tank, a heat pump on building mass, rooftop solar, a home battery and fixed loads: models, MILP, baselines, own verifier and safe pipeline, TOML households and catalogue, backtest (`docs/appliances.md`) | slices 1-6 done; not wired into `graph` or `api` yet |
 | `llm` | HF Inference Providers client, fallback chain, budget, cache | done |
 | `graph` | Agent: parse request, validate, plan (via `safety`), explain; LangGraph or built-in runner | done; `run_replan` plans again from a stored, already validated request |
 | `api` | FastAPI: API keys, rate limit, request IDs, idempotency, health and readiness; framework-free core in `security`, `ratelimit`, `idempotency`, `service` | done (single process; no streaming) |

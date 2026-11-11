@@ -58,7 +58,8 @@ schedule, checks that schedule independently, and explains it in a few sentences
 | Home battery (price arbitrage and solar surplus, losses, wear cost, no grid export), optimiser + verifier + fallback | done, tested; **synthetic results only**: the gain is 0.29 EUR/day at an assumed 0.05 EUR/kWh wear cost and vanishes above about 0.10-0.15 (`docs/appliances.md`); not yet planned from API requests |
 | Plain-language appliance requests through the API ("run the dishwasher before 8pm"): deterministic parser, same safety pipeline, tested | done; cycles only (tank, heat pump and solar need a verified weather forecast); no replanning |
 | Fixed loads (fridge, cooking, lighting, TV, standby, home office as hourly profiles), listed per household | done, tested; **illustrative profiles, one shape for every day**, not a forecast (`docs/appliances.md`) |
-| Forecasting (load, prices, weather) | not started |
+| Forecast error measured for the sun (persistence, 3-day mean, blind), cost = same days vs perfect foresight | done, tested; **synthetic weather only**: regret 0.2-0.4% without a battery, 1.9-7.2% with one, likely a lower bound (`docs/appliances.md`); no real forecast source, no hourly replanning, prices/load/temperature still assumed known |
+| Real forecasts (weather service, load, price publication) and replanning | not started |
 | Deployment to a host, rollback, load and failure tests, runbook | `deploy/deploy.sh` is written but untested; the rest not started |
 
 No household savings figure is claimed. See "Results" below and `docs/results.md`.
