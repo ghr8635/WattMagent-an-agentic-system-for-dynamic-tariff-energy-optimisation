@@ -7,6 +7,7 @@ appliance is a config entry, not code.
 
 from __future__ import annotations
 
+import math
 import tomllib
 from collections.abc import Mapping
 from dataclasses import dataclass, field
@@ -77,11 +78,25 @@ class BatteryModel:
 
 
 @dataclass(frozen=True, slots=True)
+class FixedLoadModel:
+    """A load that is never scheduled: its average power (kW) for each local clock hour."""
+
+    key: str
+    description: str
+    hourly_kw: tuple[float, ...]
+
+    @property
+    def daily_kwh(self) -> float:
+        return math.fsum(self.hourly_kw)
+
+
+@dataclass(frozen=True, slots=True)
 class Catalogue:
     cycles: dict[str, CycleModel] = field(default_factory=dict)
     tanks: dict[str, TankModel] = field(default_factory=dict)
     heatpumps: dict[str, HeatPumpModel] = field(default_factory=dict)
     batteries: dict[str, BatteryModel] = field(default_factory=dict)
+    fixed: dict[str, FixedLoadModel] = field(default_factory=dict)
 
 
 _CYCLE_KEYS = {"description", "profile_kw"}
@@ -106,6 +121,7 @@ _HP_REQUIRED = {
     "t_initial_c",
 }
 _HP_OPTIONAL = {"description", "cop_at_7c", "cop_slope_per_k", "cop_min", "cop_max"}
+_FIXED_KEYS = {"description", "hourly_kw"}
 _BATTERY_REQUIRED = {"capacity_kwh", "max_charge_kw", "max_discharge_kw"}
 _BATTERY_OPTIONAL = {
     "description",
@@ -211,6 +227,17 @@ def parse_heatpump(key: str, table: Mapping[str, Any]) -> HeatPumpModel:
     )
 
 
+def parse_fixed(key: str, table: Mapping[str, Any]) -> FixedLoadModel:
+    where = f"fixed.{key}"
+    _check_keys(where, table, _FIXED_KEYS)
+    if "hourly_kw" not in table:
+        raise ConfigError(f"{where}: missing hourly_kw")
+    hourly = _numbers(f"{where}.hourly_kw", table["hourly_kw"], 24)
+    if any(not math.isfinite(v) or v < 0 for v in hourly):
+        raise ConfigError(f"{where}.hourly_kw: every value must be a finite number >= 0")
+    return FixedLoadModel(key, str(table.get("description", "")), hourly)
+
+
 def parse_battery(key: str, table: Mapping[str, Any]) -> BatteryModel:
     where = f"battery.{key}"
     _check_keys(where, table, _BATTERY_REQUIRED | _BATTERY_OPTIONAL)
@@ -237,11 +264,12 @@ def parse_battery(key: str, table: Mapping[str, Any]) -> BatteryModel:
 
 def parse_catalogue(raw: Mapping[str, Any], base: Catalogue | None = None) -> Catalogue:
     """Entries in ``raw`` (``{"cycle": {...}, "tank": {...}}``) added to or replacing ``base``."""
-    _check_keys("catalogue", raw, {"cycle", "tank", "heatpump", "battery"})
+    _check_keys("catalogue", raw, {"cycle", "tank", "heatpump", "battery", "fixed"})
     cycles = dict(base.cycles) if base else {}
     tanks = dict(base.tanks) if base else {}
     heatpumps = dict(base.heatpumps) if base else {}
     batteries = dict(base.batteries) if base else {}
+    fixed = dict(base.fixed) if base else {}
     for key, table in (raw.get("cycle") or {}).items():
         if not isinstance(table, Mapping):
             raise ConfigError(f"cycle.{key}: expected a table")
@@ -258,7 +286,11 @@ def parse_catalogue(raw: Mapping[str, Any], base: Catalogue | None = None) -> Ca
         if not isinstance(table, Mapping):
             raise ConfigError(f"battery.{key}: expected a table")
         batteries[key] = parse_battery(key, table)
-    return Catalogue(cycles, tanks, heatpumps, batteries)
+    for key, table in (raw.get("fixed") or {}).items():
+        if not isinstance(table, Mapping):
+            raise ConfigError(f"fixed.{key}: expected a table")
+        fixed[key] = parse_fixed(key, table)
+    return Catalogue(cycles, tanks, heatpumps, batteries, fixed)
 
 
 def default_catalogue() -> Catalogue:

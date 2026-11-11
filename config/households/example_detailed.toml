@@ -1,0 +1,49 @@
+# Example household with its fixed loads listed one by one instead of a single base-load figure,
+# plus a washing machine, a dishwasher, a water heater and rooftop solar.
+#
+# Fixed loads are never scheduled; they only add to the household's demand (so they decide how
+# much solar is used at home, and the connection limit). Every profile is an ILLUSTRATIVE
+# ASSUMPTION from catalogue.toml; override `hourly_kw` or set `count` for your own.
+name = "Example house with listed fixed loads"
+timezone = "Europe/Berlin"
+max_grid_kw = 11.0
+
+[[fixed]]
+appliance = "refrigerator"
+
+[[fixed]]
+appliance = "freezer"
+
+[[fixed]]
+appliance = "induction_cooking"
+
+[[fixed]]
+appliance = "lighting_led"
+
+[[fixed]]
+appliance = "tv_entertainment"
+
+[[fixed]]
+appliance = "standby_network"
+
+[[fixed]]
+appliance = "home_office"
+count = 2            # two people working from home
+
+[[cycle]]
+appliance = "washing_machine"
+earliest_hour = 6
+deadline_hour = 22
+
+[[cycle]]
+appliance = "dishwasher"
+earliest_hour = 12
+deadline_hour = 24
+
+[tank]
+appliance = "water_heater_200l"
+
+[solar]
+kwp = 6.0
+performance_ratio = 0.8
+export_price_eur_kwh = 0.08   # ASSUMED fixed feed-in rate; check yours

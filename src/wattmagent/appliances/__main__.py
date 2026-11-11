@@ -111,12 +111,19 @@ def main() -> None:
         basis = "spot (wholesale) energy price only: no grid fees, taxes or margin"
 
     print(f"# {label}\n# household: {household.name}, time zone {household.timezone}")
+    catch_all = (
+        f" + {household.daily_base_load_kwh:g} kWh/day catch-all"
+        if household.daily_base_load_kwh
+        else ""
+    )
     print(
         f"# {len(household.cycles)} cycle appliances, hot-water tank: "
         f"{household.tank.key if household.tank else 'none'}, "
         f"heat pump: {household.heatpump.key if household.heatpump else 'none'}, "
         f"solar: {f'{household.solar.kwp:g} kWp' if household.solar else 'none'}, "
         f"battery: {f'{household.battery.capacity_kwh:g} kWh' if household.battery else 'none'}, "
+        f"fixed loads: {len(household.fixed)} listed ({household.fixed_daily_kwh:.1f} kWh/day)"
+        f"{catch_all}, "
         f"connection limit: {household.max_grid_kw or 'none'} kW"
     )
     if weather_label:

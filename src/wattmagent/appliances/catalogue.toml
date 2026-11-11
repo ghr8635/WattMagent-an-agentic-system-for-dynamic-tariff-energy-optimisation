@@ -109,3 +109,37 @@ initial_soc = 0.5
 charge_efficiency = 0.96
 discharge_efficiency = 0.96
 wear_eur_per_kwh = 0.05
+
+
+# ---- fixed loads (never scheduled; they add to the household's base load) -----------------------
+# hourly_kw is the average power for each LOCAL clock hour 0..23. All figures are illustrative
+# assumptions for a small household, not measurements; scale them with `count` or override
+# hourly_kw in the household file.
+
+[fixed.refrigerator]
+description = "Fridge-freezer combination, A-class, about 1 kWh a day"
+hourly_kw = [0.04, 0.04, 0.04, 0.04, 0.04, 0.04, 0.04, 0.04, 0.04, 0.04, 0.04, 0.04, 0.04, 0.04, 0.04, 0.04, 0.04, 0.04, 0.04, 0.04, 0.04, 0.04, 0.04, 0.04]
+
+[fixed.freezer]
+description = "Chest freezer, about 1.2 kWh a day"
+hourly_kw = [0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05]
+
+[fixed.induction_cooking]
+description = "Cooking on an induction hob and oven, about 2.5 kWh a day"
+hourly_kw = [0, 0, 0, 0, 0, 0, 0, 0.3, 0, 0, 0, 0, 0.4, 0, 0, 0, 0, 0, 1.2, 0.6, 0, 0, 0, 0]
+
+[fixed.lighting_led]
+description = "LED lighting, about 0.9 kWh a day"
+hourly_kw = [0, 0, 0, 0, 0, 0, 0.05, 0.05, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0.1, 0.15, 0.15, 0.15, 0.15, 0.1, 0]
+
+[fixed.tv_entertainment]
+description = "Television and set-top box, evenings, about 0.75 kWh a day"
+hourly_kw = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0.15, 0.15, 0.15, 0.15, 0.15, 0]
+
+[fixed.standby_network]
+description = "Standby loads and router, always on, about 1.4 kWh a day"
+hourly_kw = [0.06, 0.06, 0.06, 0.06, 0.06, 0.06, 0.06, 0.06, 0.06, 0.06, 0.06, 0.06, 0.06, 0.06, 0.06, 0.06, 0.06, 0.06, 0.06, 0.06, 0.06, 0.06, 0.06, 0.06]
+
+[fixed.home_office]
+description = "Laptop, monitor and charger on working days, about 1 kWh a day"
+hourly_kw = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0.12, 0.12, 0.12, 0.12, 0.12, 0.12, 0.12, 0.12, 0, 0, 0, 0, 0, 0, 0]

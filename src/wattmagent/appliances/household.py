@@ -28,6 +28,7 @@ Unknown keys are errors, so a typo cannot silently change a household.
 
 from __future__ import annotations
 
+import math
 import tomllib
 from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass, field
@@ -40,12 +41,14 @@ from wattmagent.appliances.catalogue import (
     Catalogue,
     ConfigError,
     CycleModel,
+    FixedLoadModel,
     HeatPumpModel,
     TankModel,
     default_catalogue,
     parse_battery,
     parse_catalogue,
     parse_cycle,
+    parse_fixed,
     parse_heatpump,
     parse_tank,
 )
@@ -64,6 +67,7 @@ _TOP = {
     "timezone",
     "max_grid_kw",
     "daily_base_load_kwh",
+    "fixed",
     "cycle",
     "tank",
     "heatpump",
@@ -71,6 +75,7 @@ _TOP = {
     "battery",
     "catalogue",
 }
+_FIXED_ENTRY = {"appliance", "name", "count", "hourly_kw", "description"}
 _SOLAR_KEYS = {"kwp", "performance_ratio", "export_price_eur_kwh"}
 _CYCLE_ENTRY = {"appliance", "name", "earliest_hour", "deadline_hour", "profile_kw", "description"}
 
@@ -101,17 +106,30 @@ class CycleEntry:
 
 
 @dataclass(frozen=True, slots=True)
+class FixedEntry:
+    model: FixedLoadModel
+    name: str
+    count: int = 1
+
+
+@dataclass(frozen=True, slots=True)
 class Household:
     name: str
     timezone: str = "Europe/Berlin"
     max_grid_kw: float | None = None
     daily_base_load_kwh: float = 0.0
+    fixed: tuple[FixedEntry, ...] = ()
     cycles: tuple[CycleEntry, ...] = ()
     tank: TankModel | None = None
     heatpump: HeatPumpModel | None = None
     solar: SolarModel | None = None
     battery: BatteryModel | None = None
     notes: list[str] = field(default_factory=list)
+
+    @property
+    def fixed_daily_kwh(self) -> float:
+        """Energy the listed fixed loads use per day (not counting ``daily_base_load_kwh``)."""
+        return math.fsum(e.count * e.model.daily_kwh for e in self.fixed)
 
 
 def _hour(where: str, value: Any) -> int:
@@ -168,6 +186,34 @@ def parse_household(raw: Mapping[str, Any], catalogue: Catalogue | None = None) 
     names = [e.name for e in entries]
     if len(set(names)) != len(names):
         raise ConfigError("cycle names must be unique; give repeated appliances a 'name'")
+
+    fixed_entries: list[FixedEntry] = []
+    fixed_raw = raw.get("fixed") or []
+    if not isinstance(fixed_raw, list):
+        raise ConfigError("fixed: expected a list of [[fixed]] tables")
+    for i, table in enumerate(fixed_raw):
+        where = f"fixed[{i}]"
+        if not isinstance(table, Mapping):
+            raise ConfigError(f"{where}: expected a table")
+        unknown = sorted(set(table) - _FIXED_ENTRY)
+        if unknown:
+            raise ConfigError(f"{where}: unknown key(s) {', '.join(unknown)}")
+        key = table.get("appliance")
+        if not isinstance(key, str) or key not in cat.fixed:
+            known = ", ".join(sorted(cat.fixed))
+            raise ConfigError(f"{where}: unknown appliance {key!r}; known fixed loads: {known}")
+        fmodel = cat.fixed[key]
+        if "hourly_kw" in table or "description" in table:
+            merged_f = {"description": fmodel.description, "hourly_kw": list(fmodel.hourly_kw)}
+            merged_f.update({k: table[k] for k in ("hourly_kw", "description") if k in table})
+            fmodel = parse_fixed(key, merged_f)
+        count = table.get("count", 1)
+        if isinstance(count, bool) or not isinstance(count, int) or not 1 <= count <= 20:
+            raise ConfigError(f"{where}.count: expected a whole number from 1 to 20")
+        fixed_entries.append(FixedEntry(fmodel, str(table.get("name", key)), count))
+    fixed_names = [e.name for e in fixed_entries]
+    if len(set(fixed_names)) != len(fixed_names):
+        raise ConfigError("fixed load names must be unique; give repeated appliances a 'name'")
 
     tank: TankModel | None = None
     table = raw.get("tank")
@@ -257,12 +303,30 @@ def parse_household(raw: Mapping[str, Any], catalogue: Catalogue | None = None) 
         timezone=tz,
         max_grid_kw=float(limit) if limit is not None else None,
         daily_base_load_kwh=float(base),
+        fixed=tuple(fixed_entries),
         cycles=tuple(entries),
         tank=tank,
         heatpump=heatpump,
         solar=solar,
         battery=battery,
     )
+
+
+def base_load_series(household: Household, local_hours: Sequence[int]) -> list[float]:
+    """The household's other load (kW) per slot: the listed fixed loads plus the catch-all.
+
+    ``daily_base_load_kwh`` is a synthetic daily shape for everything not listed; each fixed
+    load adds its own hourly profile (times ``count``). Empty when there is neither.
+    """
+    series = (
+        synthetic_load_kw(local_hours, household.daily_base_load_kwh)
+        if household.daily_base_load_kwh > 0
+        else [0.0] * len(local_hours)
+    )
+    for entry in household.fixed:
+        for i, h in enumerate(local_hours):
+            series[i] += entry.count * entry.model.hourly_kw[h % 24]
+    return series if any(v > 0 for v in series) else []
 
 
 def _validate_tank(m: TankModel) -> None:
@@ -365,11 +429,7 @@ def build_day_inputs(
         total = sum(shape)
         draws = [household.tank.daily_draw_kwh * shape[h % 24] / total for h in local_hours]
 
-    base = (
-        synthetic_load_kw(local_hours, household.daily_base_load_kwh)
-        if household.daily_base_load_kwh > 0
-        else []
-    )
+    base = base_load_series(household, local_hours)
     building: BuildingSpec | None = None
     if household.heatpump is not None and outdoor_c is not None:
         if len(outdoor_c) != len(prices):

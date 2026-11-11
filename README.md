@@ -2,8 +2,8 @@
 
 WattMagent plans when a household should use electricity, so flexible loads run in cheap
 hours. Today that means an EV and a home battery, plus washing machine, dryer, dishwasher,
-hot-water tank, an air heat pump, rooftop solar and a home battery (separately planned), on German
-day-ahead prices; forecasting is not built yet. It sits on top of existing dynamic tariffs and home
+hot-water tank, an air heat pump, rooftop solar, a home battery and listed fixed loads (separately
+planned), on German day-ahead prices; forecasting is not built yet. It sits on top of existing dynamic tariffs and home
 automation instead of replacing them.
 
 You tell it what you need in plain language ("80% by 7am, not before 22:00"). It returns a
@@ -57,7 +57,8 @@ schedule, checks that schedule independently, and explains it in a few sentences
 | Rooftop solar (radiation -> generation, own use, export/curtail, net-bill cost), verified independently | done, tested; on real prices and weather over 1,035 days the optimiser's cost was 23.0% below running immediately (16.9% below a price- and solar-aware rule), model yield about 1,008 kWh/kWp a year; **not household savings** (assumed appliances, export price, synthetic base load, perfect foresight) |
 | Home battery (price arbitrage and solar surplus, losses, wear cost, no grid export), optimiser + verifier + fallback | done, tested; **synthetic results only**: the gain is 0.29 EUR/day at an assumed 0.05 EUR/kWh wear cost and vanishes above about 0.10-0.15 (`docs/appliances.md`); not yet planned from API requests |
 | Plain-language appliance requests through the API ("run the dishwasher before 8pm"): deterministic parser, same safety pipeline, tested | done; cycles only (tank, heat pump and solar need a verified weather forecast); no replanning |
-| Fixed-load profiles, forecasting | not started |
+| Fixed loads (fridge, cooking, lighting, TV, standby, home office as hourly profiles), listed per household | done, tested; **illustrative profiles, one shape for every day**, not a forecast (`docs/appliances.md`) |
+| Forecasting (load, prices, weather) | not started |
 | Deployment to a host, rollback, load and failure tests, runbook | `deploy/deploy.sh` is written but untested; the rest not started |
 
 No household savings figure is claimed. See "Results" below and `docs/results.md`.

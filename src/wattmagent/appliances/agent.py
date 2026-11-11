@@ -16,12 +16,11 @@ import uuid
 from datetime import datetime, time, timedelta
 from typing import Any
 
-from wattmagent.appliances.household import Household
+from wattmagent.appliances.household import Household, base_load_series
 from wattmagent.appliances.models import CycleJob, CycleSpec, DayInputs
 from wattmagent.appliances.pipeline import plan_appliances_safely
 from wattmagent.appliances.request import ApplianceAsk, parse_appliance_request
 from wattmagent.appliances.simulate import cost_eur, place
-from wattmagent.data.load import synthetic_load_kw
 from wattmagent.graph.agent import AgentResponse
 from wattmagent.graph.context import AgentContext, window_start_for
 from wattmagent.graph.validate import HORIZON_HOURS
@@ -119,11 +118,7 @@ def run_appliance_agent(
     by_start = {p.start: p.eur_per_kwh for p in ctx.prices}
     prices = [by_start.get(s, 0.0) for s in starts]
     local_hours = [s.hour for s in starts]
-    base = (
-        synthetic_load_kw(local_hours, household.daily_base_load_kwh)
-        if household.daily_base_load_kwh > 0
-        else []
-    )
+    base = base_load_series(household, local_hours)
     inputs = DayInputs(prices, jobs=jobs, base_load_kw=base, max_grid_kw=household.max_grid_kw)
     problems = check_price_snapshot(
         PriceSnapshot(ctx.prices, ctx.fetched_at),
