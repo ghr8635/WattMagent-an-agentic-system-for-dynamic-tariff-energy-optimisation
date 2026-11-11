@@ -1,6 +1,6 @@
 # Appliances: cycles, tank, heat pump, solar, battery and fixed loads
 
-Status: **slice 5**. Six behaviour classes, one optimiser, one independent verifier, a TOML
+Status: **slice 6** (adds the measurement of forecast error, below). Six behaviour classes, one optimiser, one independent verifier, a TOML
 household file and a small extensible catalogue. It is **not yet connected to the agent or the
 API**, and it is planned separately from the EV and battery (see "Limits").
 
@@ -175,6 +175,45 @@ money. A realistic wear cost (device price divided by lifetime throughput) can e
 range, so **this result may not carry over to a real battery**. Run the script on real prices
 (`--csv` and `--weather-json`) before drawing any conclusion; none is recorded here yet.
 
+## What imperfect foresight costs
+
+Every other result here lets the planner see the day's true sunshine. A real system only has a
+forecast. `scripts/forecast_value.py` replays the same days with the planner seeing a forecast
+while the bill and the safety check use the **true** sun, so the difference is the cost of
+forecast error alone (`regret`: optimiser cost with the forecast minus with perfect foresight,
+on the same days). Forecasts are built from past days only (`wattmagent/data/forecast.py`; a test
+checks that none looks ahead): *persistence* (the same hour yesterday), the *mean of the last 3
+days*, and a *blind* planner that assumes no sun at all. Prices stay known in advance, and
+outdoor temperature is not forecast (the heat pump sees the true temperatures).
+
+Synthetic prices and weather, 364 days, seed 7 (`docs/results/forecast_value_*_synthetic.txt`):
+
+| Household | Forecast | Sun error (MAE, W/m2) | Regret EUR/day | Regret |
+|---|---|---|---|---|
+| Cycles, tank, solar, listed fixed loads (no battery) | persistence | 42 | 0.0032 | 0.2% |
+| | mean of last 3 days | 50 | 0.0042 | 0.3% |
+| | blind (no sun) | 188 | 0.0056 | 0.4% |
+| Same plus heat pump and 10 kWh battery | persistence | 42 | 0.0372 | 1.9% |
+| | mean of last 3 days | 50 | 0.0423 | 2.2% |
+| | blind (no sun) | 188 | 0.1413 | 7.2% |
+
+All plans stayed valid on every day. How to read it:
+
+- **Without a battery the sun forecast hardly matters** here: the solar is used at home first
+  anyway, and the little that can move (a wash cycle, the tank) gains little from knowing the sun.
+- **With a battery it matters more**: the battery's whole job is to decide how much of the
+  midday surplus to keep, and a planner that does not know the sun loses 7%. Persistence loses
+  about 2%, which is roughly an eighth of the battery's own gain in the earlier table (0.29
+  EUR/day at 0.05 EUR/kWh wear).
+- **The simplest forecast beat the smoother one** on this data, and both are far better than none.
+- **Caveat that matters:** the weather here is *synthetic*, and its day-to-day swings are probably
+  milder than real cloud. Real persistence error will be larger, so these regrets are likely
+  **lower bounds**. Run the script on the real archive (`--csv`, `--weather-json`) before using
+  any number, and a real numerical forecast (not tested here, the endpoint is unverified) would do
+  better than persistence.
+- **The plan is open loop for the whole day.** A real controller would replan every hour as the
+  sky turns out; that is not built, and it would shrink the regret.
+
 ### Real-data run (prices and weather)
 
 `docs/results/appliances_full_real_prices.txt`: the full-house example on real SMARD prices and
@@ -234,6 +273,7 @@ python -m wattmagent.appliances --household config/households/example.toml --syn
 python -m wattmagent.appliances --household config/households/example_full.toml --synthetic --start 2025-06-01
 python -m wattmagent.appliances --household config/households/example_battery.toml --synthetic --days 365 --seed 7
 python scripts/battery_sensitivity.py --days 365 --seed 7     # how much the wear cost matters
+python scripts/forecast_value.py --days 365 --seed 7           # what an imperfect sun forecast costs
 python -m wattmagent.appliances --household config/households/example_detailed.toml --synthetic --days 365 --seed 7
 ```
 
@@ -266,6 +306,13 @@ run on the real SMARD series is done on your machine and is not recorded here ye
   slot; more household load never lowers the whole bill; a cooking spike that uses up the
   connection limit moves a cycle out of its cheapest hour. Ignoring the loads, or ignoring
   `count`, makes tests fail. A regression test pins the default catalogue's contents.
+- Forecasts: persistence and the multi-day mean are the right past values, never use the hour
+  itself or anything later (poisoning the future leaves earlier forecasts unchanged), leave gaps
+  as gaps, and the error measure ignores night hours; a perfect forecast changes nothing; a rule
+  that ignores the sun costs the same under any forecast; not knowing the sun never beats knowing
+  it; a forecast promising sun that does not come breaks the connection limit and shows up as
+  invalid days (the bill and the check use the true sun). Billing on the forecast, looking ahead,
+  and counting night hours each make a test fail.
 - Daylight-saving days of 23 and 25 hours map windows to the right slots.
 
 ## Limits (honest)
@@ -285,6 +332,8 @@ run on the real SMARD series is done on your machine and is not recorded here ye
   season effects, no random behaviour, no link to the heat pump or the tank.
 - **Little flexibility in a small band.** A 200 l tank with a 15 K band stores about 3.5 kWh, so
   heating can move by an hour or two, not by half a day. The numbers show that honestly.
+- **Only the sun is forecast-tested.** Prices, outdoor temperature, hot-water draw and the
+  household load are still assumed known; the load is one fixed shape every day.
 - **Prices are assumed known for the whole day**, as in the EV backtest; the publication time of
   the next day's prices is unverified.
 - **Windows are the user's.** Nothing here learns when a machine is actually loaded.

@@ -4,6 +4,10 @@ A planning day is local midnight to the next local midnight (23, 24 or 25 hours)
 rules, as in the EV backtest:
 
 - planners see the day's prices in advance (day-ahead prices; publication time unverified);
+- by default planners also see the day's actual weather (perfect foresight); with
+  ``radiation_forecast`` they plan on a forecast of the sun instead, while billing and the
+  verifier use the actual sun, so the cost of forecast error shows up as a higher bill or an
+  invalid day;
 - billing is the appliance energy on the actual prices; the base load never enters the cost;
 - hot-water use and base load are synthetic shapes, and appliance figures are assumptions;
 - a day counts as *valid* only if the independent verifier finds no violation, whatever
@@ -79,6 +83,7 @@ def run_appliance_backtest(
     outdoor: Mapping[datetime, float] | None = None,
     heating_max_mean_c: float = 15.0,
     radiation: Mapping[datetime, float] | None = None,
+    radiation_forecast: Mapping[datetime, float] | None = None,
 ) -> list[ApplianceSummary]:
     """Replay ``planners`` over every complete local day.
 
@@ -89,6 +94,12 @@ def run_appliance_backtest(
     perfect-foresight assumption like the price one. A household with solar also needs
     ``radiation`` (W/m2, same keys); every day gets its solar, and the billed cost becomes the
     whole net grid bill (see ``plan_cost``).
+
+    ``radiation_forecast`` (same keys) makes the planners see forecast solar instead of the
+    actual values. Only days for which a forecast exists for every hour are replayed, the same
+    days for every planner, so ``days`` can be smaller. Billing, the validity check and the
+    hot-water and heat-pump physics use actuals; outdoor temperature is not forecast here (the
+    heat pump still sees the true temperatures).
     """
     for prev, cur in zip(prices, prices[1:], strict=False):
         if (cur.start - prev.start).total_seconds() != 3600:
@@ -115,6 +126,26 @@ def run_appliance_backtest(
             values.append(value)
         return values
 
+    def day_forecast(window: Sequence[PricePoint]) -> list[float] | None:
+        """Forecast radiation for the day, or None if any hour has no forecast."""
+        if radiation_forecast is None:
+            return None
+        values: list[float] = []
+        for p in window:
+            start = p.start if p.start.tzinfo else p.start.replace(tzinfo=UTC)
+            value = radiation_forecast.get(start.astimezone(UTC))
+            if value is None:
+                return None
+            values.append(value)
+        return values
+
+    if radiation_forecast is not None:
+        if household.solar is None:
+            raise ValueError("a radiation forecast only makes sense for a household with solar")
+        slices = [sl for sl in slices if day_forecast(prices[sl]) is not None]
+        if not slices:
+            raise ValueError("the forecast covers no complete day")
+
     def day_outdoor(window: Sequence[PricePoint]) -> list[float] | None:
         if household.heatpump is None or outdoor is None:
             return None
@@ -136,10 +167,14 @@ def run_appliance_backtest(
             hours = [_local_hour(p, tz) for p in window]
             temps = day_outdoor(window)
             inputs = build_day_inputs(household, actual, hours, temps, day_radiation(window))
-            plan = planner(inputs)
+            seen = inputs  # what the planner is told
+            predicted = day_forecast(window)
+            if predicted is not None:
+                seen = build_day_inputs(household, actual, hours, temps, predicted)
+            plan = planner(seen)
             fallback = not plan.feasible
             if fallback:
-                plan = run_immediately(inputs)
+                plan = run_immediately(seen)
             cost, kwh, valid = simulate_day(inputs, plan, actual)
             days.append(
                 ApplianceDay(window[0].start, cost, kwh, valid, fallback, temps is not None)
