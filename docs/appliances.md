@@ -1,6 +1,6 @@
-# Appliances: shiftable cycles, tank, heat pump, solar and battery
+# Appliances: cycles, tank, heat pump, solar, battery and fixed loads
 
-Status: **slice 4**. Five behaviour classes, one optimiser, one independent verifier, a TOML
+Status: **slice 5**. Six behaviour classes, one optimiser, one independent verifier, a TOML
 household file and a small extensible catalogue. It is **not yet connected to the agent or the
 API**, and it is planned separately from the EV and battery (see "Limits").
 
@@ -14,7 +14,7 @@ API**, and it is planned separately from the EV and battery (see "Limits").
 | **Thermal store with a comfort band** | electric water heater | one-node tank, temperature band, on/off or modulating element | **done** |
 | **Thermal store, building mass** | air heat pump | one-node building, comfort band, COP from the outdoor temperature | **done** (heat pump; resistive heating and AC not started) |
 | **Generation** | rooftop PV | radiation x kWp x performance ratio; own use first, export or curtail | **done** (the model; yield not yet checked on a full real year) |
-| Fixed loads | fridge, cooking, lighting, TV, standby | demand profile, never scheduled | not started |
+| **Fixed loads** | fridge, freezer, cooking, lighting, TV, standby, home office | average kW for each local clock hour, never scheduled | **done** (illustrative profiles) |
 
 ## How it works
 
@@ -95,6 +95,26 @@ folds in tilt, orientation, temperature and inverter losses into one assumed num
 - A model yield is printed per run (kWh per kWp over the period). Compare it with known yields
   (Germany: roughly 900-1,100 kWh/kWp a year on a good roof) **only over a full year**; a winter
   run says nothing about the annual figure.
+
+## Fixed loads
+
+Some loads cannot be moved: the fridge, cooking, lighting, the TV, standby, a home office.
+They are not planned; they add to the household's demand, which matters in two places: how
+much of the solar the house uses itself (and so what the net bill is), and the connection limit.
+
+- A fixed load is a catalogue entry with `hourly_kw`: the average power for each **local clock
+  hour** 0-23 (so it follows daylight-saving days correctly). The catalogue has a fridge-freezer,
+  a freezer, induction cooking, LED lighting, TV, standby and network, and a home office; all
+  figures are **illustrative assumptions** for a small household, not measurements.
+- A household lists them with `[[fixed]]`, optionally `count = 2` (two people working from home)
+  or its own `hourly_kw`; a new load is a table in the file, no code. Repeated appliances need
+  a `name`.
+- `daily_base_load_kwh` still exists as a catch-all for everything not listed; the two add up.
+- Example: `config/households/example_detailed.toml` (7 listed loads, 9.7 kWh/day), run in
+  `docs/results/appliances_detailed_synthetic.txt` (synthetic prices and weather; the optimiser
+  is 8.7% below running immediately on that house's whole net bill).
+- **Not a forecast.** The profile is the same every day (no weekdays, seasons or occupancy), so
+  the optimiser plans against a load shape that a real house will not follow exactly.
 
 ## Home battery
 
@@ -214,6 +234,7 @@ python -m wattmagent.appliances --household config/households/example.toml --syn
 python -m wattmagent.appliances --household config/households/example_full.toml --synthetic --start 2025-06-01
 python -m wattmagent.appliances --household config/households/example_battery.toml --synthetic --days 365 --seed 7
 python scripts/battery_sensitivity.py --days 365 --seed 7     # how much the wear cost matters
+python -m wattmagent.appliances --household config/households/example_detailed.toml --synthetic --days 365 --seed 7
 ```
 
 `docs/results/appliances_*.txt` (cycles+tank, heat pump, full house in winter and summer) are **synthetic** runs (labelled in its header). A
@@ -240,6 +261,11 @@ run on the real SMARD series is done on your machine and is not recorded here ye
   limit; a battery never makes the bill worse than none; the verifier flags overpowered, overlapping,
   overfull, over-drained, end-empty and exporting plans. Each safety constraint was removed in turn
   to check that a test fails.
+- Fixed loads: bad definitions (wrong length, negative, NaN, unknown keys), bad counts and
+  duplicate names are refused; `count` multiplies; profiles follow the local clock hour of each
+  slot; more household load never lowers the whole bill; a cooking spike that uses up the
+  connection limit moves a cycle out of its cheapest hour. Ignoring the loads, or ignoring
+  `count`, makes tests fail. A regression test pins the default catalogue's contents.
 - Daylight-saving days of 23 and 25 hours map windows to the right slots.
 
 ## Limits (honest)
@@ -255,6 +281,8 @@ run on the real SMARD series is done on your machine and is not recorded here ye
   no defrost or minimum run time, a straight-line COP, and heating only (no cooling).
 - **One-node tank.** No stratification, no weekly high-temperature (legionella) cycle, no
   user-specific draw; the draw is a fixed daily shape scaled to the household figure.
+- **Fixed loads are one fixed daily shape**, not a measured or forecast demand: no weekday or
+  season effects, no random behaviour, no link to the heat pump or the tank.
 - **Little flexibility in a small band.** A 200 l tank with a 15 K band stores about 3.5 kWh, so
   heating can move by an hour or two, not by half a day. The numbers show that honestly.
 - **Prices are assumed known for the whole day**, as in the EV backtest; the publication time of

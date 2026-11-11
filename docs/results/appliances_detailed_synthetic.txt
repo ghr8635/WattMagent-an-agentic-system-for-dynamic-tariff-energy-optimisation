@@ -1,0 +1,12 @@
+# SYNTHETIC prices (seed=7), not market data
+# household: Example house with listed fixed loads, time zone Europe/Berlin
+# 2 cycle appliances, hot-water tank: water_heater_200l, heat pump: none, solar: 6 kWp, battery: none, fixed loads: 7 listed (9.7 kWh/day), connection limit: 11.0 kW
+# SYNTHETIC weather (seed=7), not measurements
+# solar: 6 kWp, performance ratio 0.8, export 0.08 EUR/kWh (ASSUMED); model yield 702 kWh/kWp over 365 days (compare with known yields only over a full year)
+# cost basis: spot (wholesale) energy price only: no grid fees, taxes or margin; cost = whole net grid bill: base load included, own solar used first, surplus exported
+# appliance figures are ILLUSTRATIVE ASSUMPTIONS; hot-water use and base load are SYNTHETIC; day-ahead prices are assumed known for the whole day
+strategy            days  cost/day  saved/day  vs base  kWh/day   valid days  fallback  heating
+run_immediately      364    1.4782                         8.45     364/364          0        0
+cheapest_start       364    1.4197     0.0585    -4.0%     8.45     364/364          0        0
+milp_optimiser       364    1.3503     0.1279    -8.7%     8.45     364/364          0        0
+# safety: 364 optimiser plans verified, 0 fallbacks (none)

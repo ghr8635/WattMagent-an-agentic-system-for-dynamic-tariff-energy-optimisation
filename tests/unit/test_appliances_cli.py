@@ -63,3 +63,10 @@ def test_cli_battery_household_shows_the_battery_strategy_and_its_assumption() -
     assert "self_consumption" in out and "milp_optimiser" in out
     assert "wear counted at 0.05 EUR/kWh discharged (ASSUMED)" in out
     assert "0 fallbacks" in out
+
+
+def test_cli_header_lists_the_fixed_loads() -> None:
+    detailed = EXAMPLE.parent / "example_detailed.toml"
+    out = run("--household", str(detailed), "--synthetic", "--days", "5", "--start", "2025-06-01")
+    assert "fixed loads: 7 listed (9.7 kWh/day)" in out
+    assert "0 fallbacks" in out
