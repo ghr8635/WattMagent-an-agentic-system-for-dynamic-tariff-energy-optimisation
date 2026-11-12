@@ -4,17 +4,18 @@
 # household without battery minus the same household with it, EUR per day
 
  wear EUR/kWh  optimiser gain  self-cons gain  optimiser cost
-         0.00          0.7175          0.1541          1.5312
-         0.02          0.5164          0.1191          1.7323
-         0.05          0.2918          0.0667          1.9569
-         0.10          0.0581         -0.0207          2.1906
-         0.15          0.0007         -0.1081          2.2480
-         0.20          0.0000         -0.1954          2.2487
+HighsMipSolverData::transformNewIntegerFeasibleSolution tmpSolver.run();
+         0.00          0.7316          0.1790          1.5410
+         0.02          0.5322          0.1431          1.7404
+         0.05          0.3085          0.0892          1.9640
+         0.10          0.0641         -0.0006          2.2085
+         0.15          0.0008         -0.0905          2.2718
+         0.20          0.0000         -0.1803          2.2726
 
  capacity kWh  optimiser gain  self-cons gain  optimiser cost
-          5.0          0.1783          0.0601          2.0704
-         10.0          0.2918          0.0667          1.9569
-         15.0          0.3467          0.0132          1.9020
+          5.0          0.1848          0.0559          2.0877
+         10.0          0.3085          0.0892          1.9640
+         15.0          0.3671          0.0483          1.9054
 
-# household without battery: optimiser 2.2487 EUR/day
+# household without battery: optimiser 2.2726 EUR/day
 # capacity rows keep power at half the capacity in kW and the wear cost of the file
