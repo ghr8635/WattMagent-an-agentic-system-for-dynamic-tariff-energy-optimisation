@@ -27,6 +27,7 @@ from wattmagent.appliances.household import Household, build_day_inputs
 from wattmagent.appliances.models import AppliancePlan, DayInputs
 from wattmagent.appliances.optimiser import plan_appliances
 from wattmagent.appliances.pipeline import AppliancePlanner, plan_appliances_safely
+from wattmagent.appliances.replan import replan_day
 from wattmagent.appliances.simulate import appliance_kw, plan_bill
 from wattmagent.appliances.verifier import verify_appliance_plan
 from wattmagent.data.prices import PricePoint
@@ -52,6 +53,8 @@ class ApplianceSummary:
     days_valid: int
     days_fallback: int
     heating_days: int = 0  # days on which the heat pump was part of the plan
+    replan_solves: int = 0  # optimiser runs with hourly replanning (first plans included)
+    replan_failed: int = 0  # replans that failed and left the previous plan in force
 
 
 def _local_hour(p: PricePoint, tz: tzinfo | None) -> int:
@@ -84,6 +87,8 @@ def run_appliance_backtest(
     heating_max_mean_c: float = 15.0,
     radiation: Mapping[datetime, float] | None = None,
     radiation_forecast: Mapping[datetime, float] | None = None,
+    replan_hourly: bool = False,
+    nowcast: bool = True,
 ) -> list[ApplianceSummary]:
     """Replay ``planners`` over every complete local day.
 
@@ -100,6 +105,13 @@ def run_appliance_backtest(
     days for every planner, so ``days`` can be smaller. Billing, the validity check and the
     hot-water and heat-pump physics use actuals; outdoor temperature is not forecast here (the
     heat pump still sees the true temperatures).
+
+    ``replan_hourly`` (needs a forecast) lets the optimiser, and only the optimiser, replan at
+    the start of every hour with the sun observed so far; with ``nowcast`` the rest of the day's
+    forecast is rescaled to how the day is going, without it the original forecast is kept (and
+    replanning must then change nothing). The rule baselines are not replanned. Replans go
+    straight to the optimiser, not through the audit pipeline; the executed day is still
+    verified against the actual weather.
     """
     for prev, cur in zip(prices, prices[1:], strict=False):
         if (cur.start - prev.start).total_seconds() != 3600:
@@ -139,6 +151,8 @@ def run_appliance_backtest(
             values.append(value)
         return values
 
+    if replan_hourly and radiation_forecast is None:
+        raise ValueError("hourly replanning needs a radiation forecast to improve on")
     if radiation_forecast is not None:
         if household.solar is None:
             raise ValueError("a radiation forecast only makes sense for a household with solar")
@@ -158,9 +172,13 @@ def run_appliance_backtest(
             temps.append(value)
         return temps if math.fsum(temps) / len(temps) <= heating_max_mean_c else None
 
+    ceiling_kw = (
+        household.solar.kwp * 1.1 * household.solar.performance_ratio if household.solar else None
+    )  # 1100 W/m2 is about the most the sun delivers at ground level
     out: list[ApplianceSummary] = []
     for name, planner in planners.items():
         days: list[ApplianceDay] = []
+        solves = failed = 0
         for sl in slices:
             window = prices[sl]
             actual = [p.eur_per_kwh for p in window]
@@ -171,7 +189,13 @@ def run_appliance_backtest(
             predicted = day_forecast(window)
             if predicted is not None:
                 seen = build_day_inputs(household, actual, hours, temps, predicted)
-            plan = planner(seen)
+            if replan_hourly and name == "milp_optimiser":
+                result = replan_day(inputs, seen.pv_kw, nowcast=nowcast, pv_ceiling_kw=ceiling_kw)
+                plan = result.plan
+                solves += result.solves
+                failed += result.failed
+            else:
+                plan = planner(seen)
             fallback = not plan.feasible
             if fallback:
                 plan = run_immediately(seen)
@@ -189,6 +213,8 @@ def run_appliance_backtest(
                 days_valid=sum(d.valid for d in days),
                 days_fallback=sum(d.used_fallback for d in days),
                 heating_days=sum(d.heating for d in days),
+                replan_solves=solves,
+                replan_failed=failed,
             )
         )
     return out

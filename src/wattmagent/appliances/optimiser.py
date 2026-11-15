@@ -34,10 +34,21 @@ solar or a battery the cost is the household's whole net grid bill, base load in
 
 from __future__ import annotations
 
+import math
+from collections.abc import Sequence
+
 import numpy as np
 from scipy.optimize import Bounds, LinearConstraint, milp
 
-from wattmagent.appliances.models import AppliancePlan, DayInputs
+from wattmagent.appliances.models import (
+    AppliancePlan,
+    BatterySpec,
+    BuildingSpec,
+    Committed,
+    CycleJob,
+    DayInputs,
+    TankSpec,
+)
 from wattmagent.appliances.simulate import place
 from wattmagent.core.errors import WattMagentError
 from wattmagent.planning.household import PlanStatus
@@ -50,7 +61,68 @@ class ApplianceOptimiserError(WattMagentError):
     """The solver failed for a reason other than an infeasible request."""
 
 
-def plan_appliances(inputs: DayInputs) -> AppliancePlan:
+def _fix_history(
+    inputs: DayInputs,
+    committed: Committed,
+    lb: np.ndarray,
+    ub: np.ndarray,
+    y_cols: list[tuple[int, int]],
+    z0: int,
+    q0: int,
+    battery_cols: tuple[int, int, int],
+    tank: TankSpec | None,
+    building: BuildingSpec | None,
+    battery: BatterySpec | None,
+) -> None:
+    """Pin the decision variables of the elapsed slots to what was executed."""
+    n, until, plan = inputs.slots, committed.until, committed.plan
+    if not 0 <= until <= n:
+        raise ValueError(f"committed.until must be 0..{n}, got {until}")
+    for j, job in enumerate(inputs.jobs):
+        started = cycle_start(job, plan.cycle_kw.get(job.spec.name, [0.0] * n))
+        for k, (jj, s) in enumerate(y_cols):
+            if jj == j and s < until:  # a start in the past happened, or it did not
+                lb[k] = ub[k] = 1.0 if s == started else 0.0
+    if tank is not None:
+        for t in range(until):
+            duty = min(1.0, max(0.0, plan.tank_kw[t] / tank.power_kw))
+            if not tank.modulating:
+                duty = float(round(duty))
+            lb[z0 + t] = ub[z0 + t] = duty
+    if building is not None:
+        for t in range(until):
+            heat = min(building.max_heat_kw, plan.heatpump_kw[t] * inputs.cop[t])
+            lb[q0 + t] = ub[q0 + t] = max(0.0, heat)
+    if battery is not None:
+        ch0, dis0, u0 = battery_cols
+        for t in range(until):
+            ch, dis = plan.battery_charge_kw[t], plan.battery_discharge_kw[t]
+            lb[ch0 + t] = ub[ch0 + t] = ch
+            lb[dis0 + t] = ub[dis0 + t] = dis
+            lb[u0 + t] = ub[u0 + t] = 1.0 if ch > _NOISE else 0.0
+
+
+def cycle_start(job: CycleJob, series: Sequence[float]) -> int | None:
+    """The start slot at which ``job`` best explains the power ``series``, or None if none does."""
+    n = len(series)
+    best: tuple[float, int] | None = None
+    for s in job.starts:
+        err = math.fsum(
+            abs(a - b) for a, b in zip(place(job.spec.profile_kw, s, n), series, strict=True)
+        )
+        if best is None or err < best[0]:
+            best = (err, s)
+    return best[1] if best is not None and best[0] < 1e-6 else None
+
+
+def plan_appliances(inputs: DayInputs, committed: Committed | None = None) -> AppliancePlan:
+    """The cheapest verified-feasible plan for the day.
+
+    With ``committed`` the first ``committed.until`` slots are held at what the earlier plan did
+    there (see ``Committed``) and only the rest is optimised; the result is a full-day plan whose
+    history equals the commitment. Infeasible (status INFEASIBLE) if the history cannot be
+    completed within the rules, for example when what really happened used up the grid limit.
+    """
     n = inputs.slots
     prices = np.asarray(inputs.prices, dtype=float)
     tank = inputs.tank
@@ -228,6 +300,11 @@ def plan_appliances(inputs: DayInputs) -> AppliancePlan:
         constraints.append(LinearConstraint(np.vstack(eq_rows), e, e))
     if ub_rows:
         constraints.append(LinearConstraint(np.vstack(ub_rows), -np.inf, np.asarray(ub_rhs)))
+
+    if committed is not None:
+        _fix_history(
+            inputs, committed, lb, ub, y_cols, z0, q0, (ch0, dis0, u0), tank, building, battery
+        )
 
     res = milp(
         cost,

@@ -1,0 +1,13 @@
+# price file: prices_hourly_utc.csv (provenance is up to you; see docs/data.md)
+# EVSpec(capacity_kwh=60.0, max_charge_kw=11.0, efficiency=0.92, plug_in_hour=18, depart_hour=7, arrival_soc=0.3, target_soc=0.8)
+# plug-in/departure hours: local time (Europe/Berlin)
+# cost basis: spot (wholesale) energy price only: no grid fees, taxes or margin
+# battery: BatterySpec(capacity_kwh=10.0, max_power_kw=5.0, charge_efficiency=0.95, discharge_efficiency=0.95, min_soc=0.1, max_soc=1.0, initial_soc=0.5, wear_eur_per_kwh=0.08)
+# SYNTHETIC base load 9 kWh/day, known to the planner; next-day prices assumed known at plug-in; battery wear is an assumption (net = bill + wear)
+
+strategy                  days  bill/day   net/day  saved/day  vs base  bat kWh/d   target met  fallback
+ev_immediately            1004     5.213     5.213                           0.00    1004/1004         0
+ev_cheapest_hours         1004     3.499     3.499      1.714   -32.9%       0.00    1004/1004         0
+milp_ev_only              1004     3.499     3.499      1.714   -32.9%       0.00    1004/1004         0
+milp_ev_and_battery       1004     3.178     3.346      1.867   -35.8%       2.10    1004/1004         0
+# safety: 2008 optimiser plans verified, 0 fallbacks (none)

@@ -280,6 +280,20 @@ class DayInputs:
 
 
 @dataclass(frozen=True, slots=True)
+class Committed:
+    """What has already been executed, for replanning part-way through the day.
+
+    The first ``until`` slots of ``plan`` are history and cannot change: cycles already started
+    keep their start, a cycle not yet started cannot start in the past, and the tank, heat pump
+    and battery keep the power they had. The rest of the day is planned afresh, with the same
+    end-of-day rules as the original plan (no colder, no emptier than at the start of the day).
+    """
+
+    until: int
+    plan: AppliancePlan
+
+
+@dataclass(frozen=True, slots=True)
 class AppliancePlan:
     status: PlanStatus
     cycle_kw: dict[str, list[float]] = field(default_factory=dict)  # per job name, per slot

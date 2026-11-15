@@ -252,6 +252,36 @@ assumptions, not a calibration (the period is not a whole number of years).
 hot-water use, assumed appliance and building figures, an assumed export price, and perfect
 foresight of the day's prices and weather.
 
+
+## Hourly replanning
+
+Instead of one plan at midnight, the optimiser can replan at the start of every hour
+(`appliances/replan.py`). Hours already lived are pinned to what was executed (`Committed` in
+`plan_appliances`: started cycles, tank and heat-pump power, battery charge and discharge), the
+tank, house and battery states follow from that history, and the rest of the day is re-optimised.
+The end-of-day rules are unchanged. A **nowcast** (`scale_to_observations`) rescales the rest of
+the day's sun forecast by observed/forecast so far (at least 5% of forecast energy seen, ratio
+capped at 3, never above what the panel can deliver). A replan that fails keeps the previous plan,
+and the executed day is verified against the actual weather.
+
+Two properties are tested: replanning with *unchanged* information changes neither the history nor
+the cost (time consistency, also without the nowcast), and a started cycle cannot be undone.
+
+`scripts/replanning_value.py`, battery house, SYNTHETIC prices and weather, 119 days, seed 7
+(`docs/results/replanning_value_synthetic.txt`); prices are still assumed known:
+
+| Forecast | Regret once EUR/day | Regret after replanning | Share won back | Solves/day |
+|---|---|---|---|---|
+| persistence | 0.0310 | 0.0048 | 85% | 11.7 |
+| mean of last 3 days | 0.0372 | 0.0053 | 86% | 11.7 |
+| blind (no sun) | 0.1219 | 0.1219 | 0% | 1.0 |
+
+Replanning without the nowcast equals planning once, as it must. All days stayed valid and no
+replan failed. The blind forecast gains nothing because scaling zero stays zero: the nowcast
+corrects the level of a forecast, not a missing one. Synthetic weather is probably milder than
+real, so treat the numbers as an illustration; rerun on the real archive before quoting any.
+About 12 solves a day (one per hour, skipped when the plan stands) cost a few seconds a day.
+
 ## Asking in plain language (API)
 
 `wattmagent.appliances.agent.run_appliance_agent` and `POST /v1/plans` (see `docs/api.md`) turn
@@ -292,6 +322,7 @@ python -m wattmagent.appliances --household config/households/example_full.toml 
 python -m wattmagent.appliances --household config/households/example_battery.toml --synthetic --days 365 --seed 7
 python scripts/battery_sensitivity.py --days 365 --seed 7     # how much the wear cost matters
 python scripts/forecast_value.py --days 365 --seed 7           # what an imperfect sun forecast costs
+python scripts/replanning_value.py --days 120 --seed 7         # what hourly replanning wins back
 python -m wattmagent.appliances --household config/households/example_detailed.toml --synthetic --days 365 --seed 7
 ```
 
