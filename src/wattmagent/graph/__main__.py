@@ -1,7 +1,8 @@
 """CLI: ``python -m wattmagent.graph "80% by 7am" --csv data/prices_hourly_utc.csv``.
 
-Without ``--llm`` only the rule parser and the template explanation are used (no network).
-``--llm`` uses the configured Hugging Face models (set WATTMAGENT_HF_TOKEN).
+By default (``--backend rules``) only the deterministic parser and the template
+explanation are used: no network, no model. ``--backend llm`` (or ``--llm``) uses the
+configured models, with the rules as the fallback.
 ``--llm-check`` only tests which configured models answer, then exits.
 """
 
@@ -9,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -24,7 +26,17 @@ def main() -> None:
     p.add_argument("--csv", type=Path, help="price CSV (timestamp,price_eur_mwh), UTC")
     p.add_argument("--now", help="ISO time with offset, e.g. 2026-03-10T17:20+00:00")
     p.add_argument("--tz", default="Europe/Berlin")
-    p.add_argument("--llm", action="store_true", help="use the Hugging Face models")
+    p.add_argument(
+        "--backend",
+        choices=["rules", "llm"],
+        help="language backend; default from WATTMAGENT_LANGUAGE_BACKEND (rules)",
+    )
+    p.add_argument("--llm", action="store_true", help="same as --backend llm")
+    p.add_argument(
+        "--eval",
+        action="store_true",
+        help="grade the deterministic parser on the labelled cases, then exit",
+    )
     p.add_argument("--llm-check", action="store_true", help="test the configured models, then exit")
     p.add_argument(
         "--llm-eval",
@@ -42,6 +54,15 @@ def main() -> None:
         settings = Settings()
         for model, ok, detail in check_models(settings):
             print(f"{'OK  ' if ok else 'FAIL'} {model}: {detail}")
+        return
+    if args.eval:
+        from wattmagent.graph.eval_cases import CASES
+        from wattmagent.graph.evaluation import evaluate
+        from wattmagent.graph.request import parse_with_rules
+
+        report = evaluate(parse_with_rules, CASES)
+        print(report.summary())
+        print("\n".join(f"MISS {m}" for m in report.misses) or "no misses")
         return
     if args.llm_eval:
         from wattmagent.core.config import Settings
@@ -66,7 +87,12 @@ def main() -> None:
         else (prices[-1].start - timedelta(hours=30)).replace(minute=20)
     )
     llm = None
-    if args.llm:
+    # Read the environment directly so the deterministic path imports nothing heavy.
+    env_backend = os.environ.get("WATTMAGENT_LANGUAGE_BACKEND", "rules")
+    backend = "llm" if args.llm else (args.backend or env_backend)
+    if backend not in ("rules", "llm"):
+        p.error(f"unknown language backend: {backend!r} (use 'rules' or 'llm')")
+    if backend == "llm":
         from wattmagent.core.config import Settings
         from wattmagent.llm.factory import build_client
 

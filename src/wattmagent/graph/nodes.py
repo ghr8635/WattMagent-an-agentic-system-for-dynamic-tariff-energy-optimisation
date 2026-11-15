@@ -126,7 +126,7 @@ def make_nodes(deps: AgentDeps) -> dict[str, Node]:
             return {
                 "explanation": template,
                 "explanation_source": "template",
-                "trace": _trace(state, "explain: template (no model configured)"),
+                "trace": _trace(state, "explain: template (deterministic mode)"),
             }
         text, source = llm_explanation(model, facts, template, deps.usage)
         return {

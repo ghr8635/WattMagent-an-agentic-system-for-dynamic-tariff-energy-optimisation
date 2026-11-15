@@ -126,8 +126,17 @@ def temperature_by_hour(points: Sequence[WeatherPoint]) -> Mapping[datetime, flo
 
 
 def radiation_by_hour(points: Sequence[WeatherPoint]) -> Mapping[datetime, float]:
-    """Global horizontal radiation (W/m2) keyed by the UTC start of the hour."""
-    return {p.start: p.shortwave_w_m2 for p in points}
+    """Global horizontal radiation (W/m2) keyed by the UTC start of the hour it covers.
+
+    Open-Meteo's ``shortwave_radiation`` is the mean over the PRECEDING hour: the value stamped
+    08:00 is the average of 07:00-08:00. The real Berlin fixture agrees (on 1 January the sun
+    rises about 07:18 UTC and sets about 15:01 UTC, computed from the sun's position; the first
+    non-zero stamp is 08:00, the last 15:00, and 07:00 and 16:00 are zero). A planning slot
+    starting at 07:00 must therefore use
+    the value stamped 08:00, so every key is moved back one hour. Using the stamp as the start
+    of the slot would put the sun one hour too early.
+    """
+    return {p.start - timedelta(hours=1): p.shortwave_w_m2 for p in points}
 
 
 def solar_yield_kwh_per_kwp(points: Sequence[WeatherPoint], performance_ratio: float) -> float:

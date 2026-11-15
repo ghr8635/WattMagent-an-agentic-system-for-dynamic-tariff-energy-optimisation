@@ -85,6 +85,10 @@ day appears after the day-ahead auction. A recorded real sample is in
 
 ## Weather: Open-Meteo archive (`data/weather.py`)
 
+> **Radiation timestamps mark the END of the hour averaged** (mean of the preceding hour; checked
+> against the sun's position in the real fixture). `radiation_by_hour` shifts each key back one
+> hour for that reason; see "Solar timing" in `docs/appliances.md`.
+
 Hourly outdoor temperature (2 m) and global horizontal shortwave radiation, needed by the heat
 pump and solar models that come next. Source: [Open-Meteo](https://open-meteo.com), data
 licensed **CC BY 4.0** (attribution required). The free tier is for **non-commercial** use, up
@@ -95,6 +99,9 @@ Checked against a real reply on 2026-11-07 (Berlin, 2025-01-01 to 01-03, saved a
 units `°C` and `W/m²`, one value per hour in parallel arrays. The parser rejects other units,
 non-UTC offsets, gaps in the hours, non-numbers and implausible values; a `null` hour is
 skipped, never filled.
+
+Checked on a long range on 2026-11-08: one archive request returned 1,036 days of hourly data
+that the parser accepted.
 
 **Not verified:** the forecast endpoint (the archive lags the present, so live use needs it),
 how the archive marks missing hours, and the long-run availability of the free tier. Only

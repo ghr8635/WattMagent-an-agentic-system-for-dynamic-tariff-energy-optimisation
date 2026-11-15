@@ -1,0 +1,9 @@
+# SYNTHETIC prices and weather (seed=7), not market or weather data
+# household: Example house with heat pump, solar and battery; cost = whole net grid bill, spot prices only
+# optimiser only; planner sees a sun forecast, bill and safety check use the true sun
+# regret = cost minus perfect foresight; closed = share of regret won back
+
+forecast                   days  perfect     once   replan +nowcast  regret  closed solves/d failed    valid
+persistence (yesterday)     119   2.7392   2.7702   2.7702   2.7440  0.0310     85%     11.7      0  119/119
+mean of last 3 days         119   2.7392   2.7764   2.7764   2.7445  0.0372     86%     11.7      0  119/119
+blind (assumes no sun)      119   2.7392   2.8611   2.8611   2.8611  0.1219      0%      1.0      0  119/119

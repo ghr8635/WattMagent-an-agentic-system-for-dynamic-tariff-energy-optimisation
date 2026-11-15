@@ -6,7 +6,7 @@
 # cost basis: spot (wholesale) energy price only: no grid fees, taxes or margin; cost = whole net grid bill: base load included, own solar used first, surplus exported
 # appliance figures are ILLUSTRATIVE ASSUMPTIONS; hot-water use and base load are SYNTHETIC; day-ahead prices are assumed known for the whole day
 strategy            days  cost/day  saved/day  vs base  kWh/day   valid days  fallback  heating
-run_immediately      364    1.4782                         8.45     364/364          0        0
-cheapest_start       364    1.4197     0.0585    -4.0%     8.45     364/364          0        0
-milp_optimiser       364    1.3503     0.1279    -8.7%     8.45     364/364          0        0
+run_immediately      364    1.5322                         8.45     364/364          0        0
+cheapest_start       364    1.4751     0.0571    -3.7%     8.45     364/364          0        0
+milp_optimiser       364    1.3944     0.1378    -9.0%     8.45     364/364          0        0
 # safety: 364 optimiser plans verified, 0 fallbacks (none)

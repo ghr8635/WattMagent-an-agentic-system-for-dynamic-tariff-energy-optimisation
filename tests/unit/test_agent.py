@@ -391,3 +391,17 @@ def test_local_servers_need_no_token_remote_ones_do() -> None:
         resolve_token("https://router.huggingface.co/v1", "")
     with pytest.raises(WattMagentError):
         resolve_token("https://localhost.evil.example/v1", "")
+
+
+def test_rules_parser_understands_spoken_forms() -> None:
+    from datetime import time
+
+    from wattmagent.graph.request import parse_with_rules
+
+    p = parse_with_rules("eighty percent by half past six in the morning")
+    assert (p.target_percent, p.depart) == (80, time(6, 30))
+    q = parse_with_rules("full by quarter to seven")
+    assert (q.target_percent, q.depart) == (100, time(6, 45))
+    assert parse_with_rules("80% by 07.30").depart == time(7, 30)
+    assert parse_with_rules("7.5% by 8").target_percent == 7.5
+    assert parse_with_rules("no one home").target_percent is None

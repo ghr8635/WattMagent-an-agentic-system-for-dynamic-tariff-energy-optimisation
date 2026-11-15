@@ -112,7 +112,7 @@ much of the solar the house uses itself (and so what the net bill is), and the c
 - `daily_base_load_kwh` still exists as a catch-all for everything not listed; the two add up.
 - Example: `config/households/example_detailed.toml` (7 listed loads, 9.7 kWh/day), run in
   `docs/results/appliances_detailed_synthetic.txt` (synthetic prices and weather; the optimiser
-  is 8.7% below running immediately on that house's whole net bill).
+  is 9.0% below running immediately on that house's whole net bill).
 - **Not a forecast.** The profile is the same every day (no weekdays, seasons or occupancy), so
   the optimiser plans against a load shape that a real house will not follow exactly.
 
@@ -148,32 +148,45 @@ a 10 kWh battery at 0.05 EUR/kWh wear, perfect foresight):
 
 | Strategy | Mean net cost per day | vs run immediately |
 |---|---|---|
-| run_immediately | 2.700 EUR | |
-| cheapest_start | 2.609 EUR | -3.4% |
-| self_consumption | 2.633 EUR | -2.5% |
-| milp_optimiser | 1.957 EUR | -27.5% |
+| run_immediately | 2.701 EUR | |
+| cheapest_start | 2.639 EUR | -2.3% |
+| self_consumption | 2.612 EUR | -3.3% |
+| milp_optimiser | 1.964 EUR | -27.3% |
 
-The same house **without** the battery: optimiser 2.249 EUR/day. So the battery's own gain is
-0.29 EUR/day here, and it depends strongly on its wear cost
+The same house **without** the battery: optimiser 2.273 EUR/day. So the battery's own gain is
+0.31 EUR/day here, and it depends strongly on its wear cost
 (`docs/results/battery_sensitivity_synthetic.txt`, `scripts/battery_sensitivity.py`):
 
 | Wear cost (EUR per kWh discharged) | Optimiser gain (EUR/day) | Price-blind rule gain (EUR/day) |
 |---|---|---|
-| 0.00 | 0.72 | 0.15 |
-| 0.02 | 0.52 | 0.12 |
-| 0.05 | 0.29 | 0.07 |
-| 0.10 | 0.06 | **-0.02** |
-| 0.15 | 0.00 | -0.11 |
-| 0.20 | 0.00 | -0.20 |
+| 0.00 | 0.73 | 0.18 |
+| 0.02 | 0.53 | 0.14 |
+| 0.05 | 0.31 | 0.09 |
+| 0.10 | 0.06 | **0.00** (-0.0006) |
+| 0.15 | 0.00 | -0.09 |
+| 0.20 | 0.00 | -0.18 |
 
 Size matters too (power set to half the capacity in kW, wear 0.05): 5 kWh gains 0.18 EUR/day,
-10 kWh 0.29 and 15 kWh 0.35, so each extra kWh adds less than the one before.
+10 kWh 0.31 and 15 kWh 0.37, so each extra kWh adds less than the one before.
 
 Read it this way: on these **synthetic** prices the battery only pays if its wear cost is low,
-and from about 0.10 EUR/kWh the optimiser simply leaves it idle while the price-blind rule loses
-money. A realistic wear cost (device price divided by lifetime throughput) can easily be in that
+and from about 0.10 EUR/kWh its gain is nearly gone (0.06) and the price-blind rule only breaks
+even; above that the optimiser leaves it idle while the price-blind rule loses money. (The
+sensitivity run printed one line of solver chatter, `HighsMipSolverData::...`, kept in the raw
+file; plans from the product always pass the independent verifier regardless.) A realistic wear cost (device price divided by lifetime throughput) can easily be in that
 range, so **this result may not carry over to a real battery**. Run the script on real prices
 (`--csv` and `--weather-json`) before drawing any conclusion; none is recorded here yet.
+
+## Solar timing
+
+Open-Meteo's `shortwave_radiation` is the mean over the **preceding** hour: the value stamped
+08:00 describes 07:00-08:00 (the docs say so, and the real Berlin fixture agrees: on 1 January
+the sun is up from about 07:18 to 15:01 UTC, and the first and last non-zero stamps are 08:00
+and 15:00). `radiation_by_hour` therefore keys each value by the start of the hour it covers, so
+a planning slot gets the sun that really falls in it. Until update 31 the stamp was used as the
+slot start, which put every solar curve one hour early; a test now checks the keying against the
+sun's computed position, and the old behaviour fails it. Temperature is an instantaneous value
+at the stamp and is used as is for the slot starting then.
 
 ## What imperfect foresight costs
 
@@ -190,20 +203,20 @@ Synthetic prices and weather, 364 days, seed 7 (`docs/results/forecast_value_*_s
 
 | Household | Forecast | Sun error (MAE, W/m2) | Regret EUR/day | Regret |
 |---|---|---|---|---|
-| Cycles, tank, solar, listed fixed loads (no battery) | persistence | 42 | 0.0032 | 0.2% |
-| | mean of last 3 days | 50 | 0.0042 | 0.3% |
-| | blind (no sun) | 188 | 0.0056 | 0.4% |
-| Same plus heat pump and 10 kWh battery | persistence | 42 | 0.0372 | 1.9% |
-| | mean of last 3 days | 50 | 0.0423 | 2.2% |
-| | blind (no sun) | 188 | 0.1413 | 7.2% |
+| Cycles, tank, solar, listed fixed loads (no battery) | persistence | 42 | 0.0037 | 0.3% |
+| | mean of last 3 days | 50 | 0.0050 | 0.4% |
+| | blind (no sun) | 188 | 0.0107 | 0.8% |
+| Same plus heat pump and 10 kWh battery | persistence | 42 | 0.0324 | 1.7% |
+| | mean of last 3 days | 50 | 0.0378 | 1.9% |
+| | blind (no sun) | 188 | 0.1281 | 6.5% |
 
 All plans stayed valid on every day. How to read it:
 
 - **Without a battery the sun forecast hardly matters** here: the solar is used at home first
   anyway, and the little that can move (a wash cycle, the tank) gains little from knowing the sun.
 - **With a battery it matters more**: the battery's whole job is to decide how much of the
-  midday surplus to keep, and a planner that does not know the sun loses 7%. Persistence loses
-  about 2%, which is roughly an eighth of the battery's own gain in the earlier table (0.29
+  midday surplus to keep, and a planner that does not know the sun loses 6.5%. Persistence loses
+  about 1.7%, which is roughly a tenth of the battery's own gain in the earlier table (0.31
   EUR/day at 0.05 EUR/kWh wear).
 - **The simplest forecast beat the smoother one** on this data, and both are far better than none.
 - **Caveat that matters:** the weather here is *synthetic*, and its day-to-day swings are probably
@@ -215,6 +228,11 @@ All plans stayed valid on every day. How to read it:
   sky turns out; that is not built, and it would shrink the regret.
 
 ### Real-data run (prices and weather)
+
+> **Stale, rerun pending.** This run was made before the radiation-timing fix (see "Solar
+> timing" below): its solar was placed one hour too early. On synthetic data the fix moved the
+> optimiser's saving by about one percentage point (summer house: -11.4% became -10.4%), so the
+> figures below are close but not exact. Rerun the command in the file header and replace them.
 
 `docs/results/appliances_full_real_prices.txt`: the full-house example on real SMARD prices and
 real Open-Meteo weather, 1,035 complete days (about 2.8 years), run on the owner's machine.
@@ -233,6 +251,36 @@ assumptions, not a calibration (the period is not a whole number of years).
 **Not household savings.** Spot prices only (no fees, taxes or margin), a synthetic base load and
 hot-water use, assumed appliance and building figures, an assumed export price, and perfect
 foresight of the day's prices and weather.
+
+
+## Hourly replanning
+
+Instead of one plan at midnight, the optimiser can replan at the start of every hour
+(`appliances/replan.py`). Hours already lived are pinned to what was executed (`Committed` in
+`plan_appliances`: started cycles, tank and heat-pump power, battery charge and discharge), the
+tank, house and battery states follow from that history, and the rest of the day is re-optimised.
+The end-of-day rules are unchanged. A **nowcast** (`scale_to_observations`) rescales the rest of
+the day's sun forecast by observed/forecast so far (at least 5% of forecast energy seen, ratio
+capped at 3, never above what the panel can deliver). A replan that fails keeps the previous plan,
+and the executed day is verified against the actual weather.
+
+Two properties are tested: replanning with *unchanged* information changes neither the history nor
+the cost (time consistency, also without the nowcast), and a started cycle cannot be undone.
+
+`scripts/replanning_value.py`, battery house, SYNTHETIC prices and weather, 119 days, seed 7
+(`docs/results/replanning_value_synthetic.txt`); prices are still assumed known:
+
+| Forecast | Regret once EUR/day | Regret after replanning | Share won back | Solves/day |
+|---|---|---|---|---|
+| persistence | 0.0310 | 0.0048 | 85% | 11.7 |
+| mean of last 3 days | 0.0372 | 0.0053 | 86% | 11.7 |
+| blind (no sun) | 0.1219 | 0.1219 | 0% | 1.0 |
+
+Replanning without the nowcast equals planning once, as it must. All days stayed valid and no
+replan failed. The blind forecast gains nothing because scaling zero stays zero: the nowcast
+corrects the level of a forecast, not a missing one. Synthetic weather is probably milder than
+real, so treat the numbers as an illustration; rerun on the real archive before quoting any.
+About 12 solves a day (one per hour, skipped when the plan stands) cost a few seconds a day.
 
 ## Asking in plain language (API)
 
@@ -274,6 +322,7 @@ python -m wattmagent.appliances --household config/households/example_full.toml 
 python -m wattmagent.appliances --household config/households/example_battery.toml --synthetic --days 365 --seed 7
 python scripts/battery_sensitivity.py --days 365 --seed 7     # how much the wear cost matters
 python scripts/forecast_value.py --days 365 --seed 7           # what an imperfect sun forecast costs
+python scripts/replanning_value.py --days 120 --seed 7         # what hourly replanning wins back
 python -m wattmagent.appliances --household config/households/example_detailed.toml --synthetic --days 365 --seed 7
 ```
 

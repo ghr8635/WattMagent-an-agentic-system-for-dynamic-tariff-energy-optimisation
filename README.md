@@ -54,11 +54,12 @@ schedule, checks that schedule independently, and explains it in a few sentences
 | Appliances, slice 1: shiftable cycles (washer, dryer, dishwasher) and a hot-water tank, optimiser + independent verifier + safe fallback, TOML households, extensible catalogue | done, tested, **synthetic-price results only so far**; not yet connected to the agent or API; all appliance figures are assumptions (`docs/appliances.md`) |
 | Weather feed (Open-Meteo archive: temperature, solar radiation) | done; checked against a real reply and a 1,036-day fetch; forecast endpoint **unverified** |
 | Heat pump (building mass as storage, COP from outdoor temperature), optimiser + verifier + fallback | done, tested, **synthetic results only**; the gain depends strongly on the assumed thermal mass (`docs/appliances.md`) |
-| Rooftop solar (radiation -> generation, own use, export/curtail, net-bill cost), verified independently | done, tested; on real prices and weather over 1,035 days the optimiser's cost was 23.0% below running immediately (16.9% below a price- and solar-aware rule), model yield about 1,008 kWh/kWp a year; **not household savings** (assumed appliances, export price, synthetic base load, perfect foresight) |
-| Home battery (price arbitrage and solar surplus, losses, wear cost, no grid export), optimiser + verifier + fallback | done, tested; **synthetic results only**: the gain is 0.29 EUR/day at an assumed 0.05 EUR/kWh wear cost and vanishes above about 0.10-0.15 (`docs/appliances.md`); not yet planned from API requests |
+| Rooftop solar (radiation -> generation, own use, export/curtail, net-bill cost), verified independently | done, tested; on real prices and weather over 1,035 days the optimiser's cost was 23.0% below running immediately (16.9% below a price- and solar-aware rule), model yield about 1,008 kWh/kWp a year (**run made before a one-hour solar-timing fix; rerun pending**, on synthetic data the fix moved the saving by about 1 point); **not household savings** (assumed appliances, export price, synthetic base load, perfect foresight) |
+| Home battery (price arbitrage and solar surplus, losses, wear cost, no grid export), optimiser + verifier + fallback | done, tested; **synthetic results only**: the gain is 0.31 EUR/day at an assumed 0.05 EUR/kWh wear cost and is nearly gone at 0.10 and zero at 0.15 (`docs/appliances.md`); not yet planned from API requests |
 | Plain-language appliance requests through the API ("run the dishwasher before 8pm"): deterministic parser, same safety pipeline, tested | done; cycles only (tank, heat pump and solar need a verified weather forecast); no replanning |
 | Fixed loads (fridge, cooking, lighting, TV, standby, home office as hourly profiles), listed per household | done, tested; **illustrative profiles, one shape for every day**, not a forecast (`docs/appliances.md`) |
-| Forecast error measured for the sun (persistence, 3-day mean, blind), cost = same days vs perfect foresight | done, tested; **synthetic weather only**: regret 0.2-0.4% without a battery, 1.9-7.2% with one, likely a lower bound (`docs/appliances.md`); no real forecast source, no hourly replanning, prices/load/temperature still assumed known |
+| Forecast error measured for the sun (persistence, 3-day mean, blind), cost = same days vs perfect foresight | done, tested; **synthetic weather only**: regret 0.3-0.8% without a battery, 1.7-6.5% with one, likely a lower bound (`docs/appliances.md`); no real forecast source, prices/load/temperature still assumed known |
+| Hourly replanning with a nowcast of the sun, pinned history, time-consistency tested | done, tested; **synthetic weather only**: wins back about 85% of the persistence-forecast regret (`docs/appliances.md`); not run on real data |
 | Real forecasts (weather service, load, price publication) and replanning | not started |
 | Deployment to a host, rollback, load and failure tests, runbook | `deploy/deploy.sh` is written but untested; the rest not started |
 
@@ -144,7 +145,6 @@ battery's extra gain falls from 0.45 to 0.15 EUR/day). All runs, settings and ca
 - One process only: the rate limit, idempotency store and plan store are in memory.
 - Base load is synthetic; cost figures use wholesale prices unless a tariff file is given.
 - Image and dependency versions are not locked (no lockfile, no base-image digest yet).
-- No licence file has been chosen yet.
 
 ## Documentation
 
@@ -154,6 +154,8 @@ battery's extra gain falls from 0.45 to 0.15 EUR/day). All runs, settings and ca
 `docs/results.md`, `docs/appliances.md`, `docs/local-models.md`, and the open work in `docs/production-checklist.md`.
 
 ## Data credit
+
+Code licence: MIT (see `LICENSE`). The data below has its own terms.
 
 Price data: Bundesnetzagentur | SMARD.de, licensed CC BY 4.0.
 

@@ -78,3 +78,40 @@ def forecast_skill(
         rmse=math.sqrt(math.fsum(d * d for d in diffs) / n),
         bias=math.fsum(diffs) / n,
     )
+
+
+def scale_to_observations(
+    forecast: Sequence[float],
+    observed: Sequence[float],
+    *,
+    min_share: float = 0.05,
+    max_ratio: float = 3.0,
+    ceiling: float | None = None,
+) -> list[float]:
+    """The day so far as observed, the rest of the day's forecast scaled by how the day is going.
+
+    ``observed`` holds the first ``len(observed)`` slots of the day; the remaining slots are
+    ``forecast`` times ``ratio = observed so far / forecast so far``, a simple "smart
+    persistence": if the sun has run 40% below forecast all morning, expect the afternoon to
+    do the same. The ratio is only used once the elapsed part carries at least ``min_share`` of
+    the day's forecast energy (before that, at night or at dawn, there is nothing to learn
+    from), and is limited to ``0 .. max_ratio``. ``ceiling`` caps each scaled value (the
+    physical maximum). Units do not matter, as long as both series share them.
+    """
+    h = len(observed)
+    if h > len(forecast):
+        raise ValueError("more observed slots than forecast slots")
+    if any(not math.isfinite(v) or v < 0 for v in (*forecast, *observed)):
+        raise ValueError("series must be finite and not negative")
+    if max_ratio < 0 or not 0 <= min_share <= 1:
+        raise ValueError("max_ratio must be >= 0 and min_share within 0..1")
+    total = math.fsum(forecast)
+    so_far = math.fsum(forecast[:h])
+    ratio = 1.0
+    if total > 0 and so_far > 0 and so_far >= min_share * total:
+        ratio = min(max_ratio, math.fsum(observed) / so_far)
+    out = list(observed)
+    for v in forecast[h:]:
+        scaled = v * ratio
+        out.append(min(scaled, ceiling) if ceiling is not None else scaled)
+    return out

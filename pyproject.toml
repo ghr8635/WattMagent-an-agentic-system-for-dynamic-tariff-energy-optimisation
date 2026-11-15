@@ -1,6 +1,7 @@
 [project]
 name = "wattmagent"
 version = "0.1.0"
+license = { file = "LICENSE" }
 description = "WattMagent: an agentic system for dynamic-tariff energy optimisation"
 readme = "README.md"
 requires-python = ">=3.12"

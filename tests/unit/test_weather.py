@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import copy
 import json
-from datetime import UTC, date, datetime
+import math
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -16,6 +17,8 @@ from wattmagent.data.weather import (
     archive_url,
     fetch_archive,
     parse_archive,
+    radiation_by_hour,
+    synthetic_weather,
 )
 
 FIXTURE = Path(__file__).parent.parent / "fixtures" / "open_meteo_archive_berlin.json"
@@ -119,3 +122,67 @@ def test_fetch_uses_the_url_and_maps_transport_errors() -> None:
 
     with pytest.raises(WeatherFeedError, match="ConnectError"):
         fetch_archive(down, 52.52, 13.41, date(2025, 1, 1), date(2025, 1, 3))
+
+
+# --- which hour does a radiation value describe? -------------------------------------------------
+
+LAT, LON = 52.54833, 13.407822  # the fixture's grid cell
+
+
+def sun_elevation_deg(t: datetime) -> float:
+    """Sun elevation (NOAA/Spencer approximation, good to a fraction of a degree)."""
+    g = 2 * math.pi / 365 * (t.timetuple().tm_yday - 1 + (t.hour - 12) / 24)
+    eqt = 229.18 * (
+        0.000075
+        + 0.001868 * math.cos(g)
+        - 0.032077 * math.sin(g)
+        - 0.014615 * math.cos(2 * g)
+        - 0.040849 * math.sin(2 * g)
+    )
+    decl = (
+        0.006918
+        - 0.399912 * math.cos(g)
+        + 0.070257 * math.sin(g)
+        - 0.006758 * math.cos(2 * g)
+        + 0.000907 * math.sin(2 * g)
+        - 0.002697 * math.cos(3 * g)
+        + 0.00148 * math.sin(3 * g)
+    )
+    hour_angle = math.radians((t.hour * 60 + t.minute + eqt + 4 * LON) / 4 - 180)
+    lat = math.radians(LAT)
+    return math.degrees(
+        math.asin(
+            math.sin(lat) * math.sin(decl) + math.cos(lat) * math.cos(decl) * math.cos(hour_angle)
+        )
+    )
+
+
+def daylight_minutes(start: datetime) -> int:
+    """Minutes of the hour starting at ``start`` in which the sun is above the horizon."""
+    return sum(sun_elevation_deg(start + timedelta(minutes=m)) > -0.833 for m in range(60))
+
+
+def test_radiation_is_keyed_by_the_hour_it_describes_not_by_its_stamp() -> None:
+    """Open-Meteo stamps the MEAN OF THE PRECEDING HOUR; a slot must use the right one.
+
+    Checked against the sun itself, not against the fixture's own numbers: a slot with
+    radiation must have real daylight in it, and a slot in full daylight must have radiation.
+    Keying by the stamp puts the 15:00-16:00 slot (the sun sets at 15:01) at 14 W/m2.
+    """
+    rad = radiation_by_hour(parse_archive(real()))
+    assert len(rad) == 72
+    for start, value in rad.items():
+        minutes = daylight_minutes(start)
+        if value > 0:
+            assert minutes >= 10, f"{start:%d %H:%M}: {value} W/m2 but sun up only {minutes} min"
+        if minutes == 60:
+            assert value > 0, f"{start:%d %H:%M}: a full daylight hour with no radiation"
+    day = [(k, v) for k, v in rad.items() if k.day == 1 and v > 0]
+    assert (day[0][0].hour, day[-1][0].hour) == (7, 14)  # 07:00-08:00 ... 14:00-15:00 UTC
+
+
+def test_synthetic_weather_follows_the_same_convention() -> None:
+    rad = radiation_by_hour(synthetic_weather(datetime(2025, 6, 21, tzinfo=UTC), 1, 1))
+    peak = max(rad, key=lambda k: rad[k])
+    assert 10 <= peak.hour <= 12  # solar noon in Germany is about 11:00-11:30 UTC
+    assert all(v == 0 for k, v in rad.items() if k.hour in (0, 1, 2, 21, 22, 23))
