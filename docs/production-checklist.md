@@ -27,6 +27,9 @@ real customers or devices.
       battery end state, cost vs baseline; attacked by tests with deliberately broken plans
 - [x] Audit log: one structured record per decision (JSON Lines), no personal data
 - [x] Data freshness check: stale, missing or implausible prices trigger the fallback (tested)
+- [x] Hourly replanning of the household plan: elapsed hours pinned, same information changes nothing (time consistency tested), failed replans keep the previous plan, executed day verified on actual weather; each pinning rule was removed in turn to confirm a test fails (`tests/unit/test_replan.py`). Synthetic data only; not reachable from the API
+- [ ] Hourly replanning on real forecasts: needs a verified forecast source (the Historical Forecast API layout and terms are unconfirmed)
+- [x] Licence: MIT (`LICENSE`), copied into the image build
 - [x] Replanning from the car's real charge and fresh prices; owner-scoped plan ids, time-limited, idempotent (tested; in-memory store, one replica)
 - [x] Idempotent requests: `Idempotency-Key` replays the stored answer; the same key with another request is a 409 (in-memory store, per process; tested)
 

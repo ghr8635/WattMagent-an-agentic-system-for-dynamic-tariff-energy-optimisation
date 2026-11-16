@@ -1,10 +1,12 @@
 # WattMagent: an agentic system for dynamic-tariff energy optimisation
 
 WattMagent plans when a household should use electricity, so flexible loads run in cheap
-hours. Today that means an EV and a home battery, plus washing machine, dryer, dishwasher,
-hot-water tank, an air heat pump, rooftop solar, a home battery and listed fixed loads (separately
-planned), on German day-ahead prices; forecasting is not built yet. It sits on top of existing dynamic tariffs and home
-automation instead of replacing them.
+hours, on German day-ahead prices. It plans two things separately: an EV with a home battery,
+and a whole household (washing machine, dryer, dishwasher, hot-water tank, air heat pump,
+rooftop solar, home battery and listed fixed loads such as fridge and lighting). The household
+planner can replan every hour as the sun is observed. It sits on top of existing dynamic tariffs
+and home automation instead of replacing them. Everything runs on assumed appliance figures and
+simulated or historical data; nothing has controlled a real home.
 
 You tell it what you need in plain language ("80% by 7am, not before 22:00"). It returns a
 schedule, checks that schedule independently, and explains it in a few sentences.
@@ -51,16 +53,16 @@ schedule, checks that schedule independently, and explains it in a few sentences
 | CI: lint, types, tests, secret scan, dependency audit, image build, container smoke test, image scan | green on GitHub Actions |
 | Docker image (non-root, read-only, no capabilities) | built and smoke-tested in CI; **never run on a real host** |
 | Language model backend (Hugging Face / local Ollama) | code and tests done with fakes; **no real model has produced a verified result**. A local 1.5B model answered with garbage, and the free Hugging Face tier has no inference credits |
-| Appliances, slice 1: shiftable cycles (washer, dryer, dishwasher) and a hot-water tank, optimiser + independent verifier + safe fallback, TOML households, extensible catalogue | done, tested, **synthetic-price results only so far**; not yet connected to the agent or API; all appliance figures are assumptions (`docs/appliances.md`) |
+| Appliances, slice 1: shiftable cycles (washer, dryer, dishwasher) and a hot-water tank, optimiser + independent verifier + safe fallback, TOML households, extensible catalogue | done, tested; all appliance figures are assumptions (`docs/appliances.md`); results are synthetic unless a row says otherwise; reachable through the API for cycles only (see the plain-language row below) |
 | Weather feed (Open-Meteo archive: temperature, solar radiation) | done; checked against a real reply and a 1,036-day fetch; forecast endpoint **unverified** |
 | Heat pump (building mass as storage, COP from outdoor temperature), optimiser + verifier + fallback | done, tested, **synthetic results only**; the gain depends strongly on the assumed thermal mass (`docs/appliances.md`) |
 | Rooftop solar (radiation -> generation, own use, export/curtail, net-bill cost), verified independently | done, tested; on real prices and weather over 1,035 days the optimiser's cost was 23.0% below running immediately (16.9% below a price- and solar-aware rule), model yield about 1,008 kWh/kWp a year (**run made before a one-hour solar-timing fix; rerun pending**, on synthetic data the fix moved the saving by about 1 point); **not household savings** (assumed appliances, export price, synthetic base load, perfect foresight) |
 | Home battery (price arbitrage and solar surplus, losses, wear cost, no grid export), optimiser + verifier + fallback | done, tested; **synthetic results only**: the gain is 0.31 EUR/day at an assumed 0.05 EUR/kWh wear cost and is nearly gone at 0.10 and zero at 0.15 (`docs/appliances.md`); not yet planned from API requests |
-| Plain-language appliance requests through the API ("run the dishwasher before 8pm"): deterministic parser, same safety pipeline, tested | done; cycles only (tank, heat pump and solar need a verified weather forecast); no replanning |
+| Plain-language appliance requests through the API ("run the dishwasher before 8pm"): deterministic parser, same safety pipeline, tested | done; cycles only: tank, heat pump, battery and solar cannot yet be planned from an API request (needs a verified weather forecast); no replanning through the API |
 | Fixed loads (fridge, cooking, lighting, TV, standby, home office as hourly profiles), listed per household | done, tested; **illustrative profiles, one shape for every day**, not a forecast (`docs/appliances.md`) |
 | Forecast error measured for the sun (persistence, 3-day mean, blind), cost = same days vs perfect foresight | done, tested; **synthetic weather only**: regret 0.3-0.8% without a battery, 1.7-6.5% with one, likely a lower bound (`docs/appliances.md`); no real forecast source, prices/load/temperature still assumed known |
 | Hourly replanning with a nowcast of the sun, pinned history, time-consistency tested | done, tested; **synthetic weather only**: wins back about 85% of the persistence-forecast regret (`docs/appliances.md`); not run on real data |
-| Real forecasts (weather service, load, price publication) and replanning | not started |
+| Real forecasts (weather service, load, price publication) | not started; the sun forecast used so far is built from past observations, prices are assumed known, load and temperature are not forecast |
 | Deployment to a host, rollback, load and failure tests, runbook | `deploy/deploy.sh` is written but untested; the rest not started |
 
 No household savings figure is claimed. See "Results" below and `docs/results.md`.
@@ -108,6 +110,8 @@ Details: `docs/api.md`, `docs/replanning.md`, `docs/deploy.md`.
 python -m wattmagent.appliances --household config/households/example.toml --synthetic --days 60
 python -m wattmagent.appliances --household config/households/example_heat_pump.toml \
     --csv data/prices_hourly_utc.csv --latitude 52.52 --longitude 13.41   # real weather, fetched
+python -m wattmagent.appliances --household config/households/example_battery.toml --synthetic --days 365 --seed 7
+python scripts/replanning_value.py --days 120 --seed 7   # what hourly replanning wins back (synthetic)
 ```
 
 **Backtest on historical prices:**
@@ -130,6 +134,23 @@ the battery's wear cost is an assumption that changes the battery's value a lot 
 battery's extra gain falls from 0.45 to 0.15 EUR/day). All runs, settings and caveats are in
 `docs/results.md`; the raw outputs are in `docs/results/`.
 
+**Whole-household planner, 364 SYNTHETIC days** (synthetic prices and weather, seed 7; cost =
+whole net grid bill at spot prices; every plan passed the independent verifier, 0 fallbacks;
+raw outputs in `docs/results/`). Assumed appliances, assumed export price, synthetic base load
+and perfect foresight of prices: **not household savings, not real-market results.**
+
+| Household | Optimiser vs running everything immediately | File |
+|---|---|---|
+| Cycles, tank, listed fixed loads, solar (no battery) | -9.0% | `appliances_detailed_synthetic.txt` |
+| Same plus heat pump and 10 kWh battery | -27.3% (2.7014 to 1.9640 EUR/day) | `appliances_battery_synthetic.txt` |
+
+The battery's own share depends on the assumed wear cost (0.31 EUR/day at 0.05 EUR/kWh, near zero
+from 0.10; `battery_sensitivity_synthetic.txt`). Planning on a sun forecast instead of the true
+sun costs 0.3-0.8% without a battery and 1.7-6.5% with one; hourly replanning wins back about
+85% of that for a persistence forecast (`forecast_value_*_synthetic.txt`,
+`replanning_value_synthetic.txt`). One real-price run exists (1,035 days, `appliances_full_real_prices.txt`)
+but predates a solar-timing fix and is being rerun.
+
 ## Safety and reliability, in practice
 
 - The optimiser's plan is never executed unverified; a failed check gives the fallback plan.
@@ -144,6 +165,8 @@ battery's extra gain falls from 0.45 to 0.15 EUR/day). All runs, settings and ca
 
 - One process only: the rate limit, idempotency store and plan store are in memory.
 - Base load is synthetic; cost figures use wholesale prices unless a tariff file is given.
+- Household plans through the API cover cycles only; battery, tank, heat pump and solar are planned from the command line.
+- Appliance results are synthetic or assumption-based; no real forecast source is wired in.
 - Image and dependency versions are not locked (no lockfile, no base-image digest yet).
 
 ## Documentation
