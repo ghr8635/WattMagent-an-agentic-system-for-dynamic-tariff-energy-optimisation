@@ -2,8 +2,11 @@
 
     "run the dishwasher before 6pm and the washing machine by noon"
 
-Only the appliances the request names are planned (cycles). The hot-water tank, heat pump and
-solar need weather and are not planned from a request yet: the forecast feed is unverified.
+The cycles the request names are planned. If the household has a hot-water tank or a home
+battery they are planned in the same day, because neither needs weather: the tank runs on its
+comfort band and the battery on prices alone (it starts half full, as assumed in the catalogue,
+and must end the day no emptier). The heat pump and solar need a weather forecast and are left
+out of a request: the forecast feed is unverified, so they are not planned from a request yet.
 Time handling: the plan covers the next 24 hours from the next full hour; a clock time means
 its next occurrence; a deadline is rounded down and an earliest start up to the full hour, so
 the plan never runs outside what was asked. Nothing here parses free text with a model.
@@ -13,10 +16,11 @@ from __future__ import annotations
 
 import math
 import uuid
+from dataclasses import replace
 from datetime import datetime, time, timedelta
 from typing import Any
 
-from wattmagent.appliances.household import Household, base_load_series
+from wattmagent.appliances.household import Household, build_day_inputs
 from wattmagent.appliances.models import CycleJob, CycleSpec, DayInputs
 from wattmagent.appliances.pipeline import plan_appliances_safely
 from wattmagent.appliances.request import ApplianceAsk, parse_appliance_request
@@ -118,8 +122,9 @@ def run_appliance_agent(
     by_start = {p.start: p.eur_per_kwh for p in ctx.prices}
     prices = [by_start.get(s, 0.0) for s in starts]
     local_hours = [s.hour for s in starts]
-    base = base_load_series(household, local_hours)
-    inputs = DayInputs(prices, jobs=jobs, base_load_kw=base, max_grid_kw=household.max_grid_kw)
+    # tank and battery need no weather; the heat pump and solar are left out (no verified forecast)
+    plannable = replace(household, cycles=(), heatpump=None, solar=None)
+    inputs = replace(build_day_inputs(plannable, prices, local_hours), jobs=jobs)
     problems = check_price_snapshot(
         PriceSnapshot(ctx.prices, ctx.fetched_at),
         now=now,
@@ -202,7 +207,23 @@ def _facts(
                 "cost_if_started_at_window_start_eur": round(base_cost, 2) if prices_ok else None,
             }
         )
-    return {"cycles": cycles, "price_basis": ctx.price_basis, "prices_ok": prices_ok}
+    facts: dict[str, Any] = {
+        "cycles": cycles,
+        "price_basis": ctx.price_basis,
+        "prices_ok": prices_ok,
+    }
+    if inputs.battery is not None:
+        facts["battery"] = {
+            "charge_hours": _hours(starts, safe.plan.battery_charge_kw),
+            "discharge_hours": _hours(starts, safe.plan.battery_discharge_kw),
+        }
+    if inputs.tank is not None:
+        facts["tank_heating_hours"] = _hours(starts, safe.plan.tank_kw)
+    return facts
+
+
+def _hours(starts: list[datetime], series: list[float]) -> list[str]:
+    return [_hhmm(t) for t, v in zip(starts, series, strict=False) if v > 1e-6]
 
 
 def _explain(
@@ -224,6 +245,19 @@ def _explain(
                 line += f", {early} EUR if started at {c['window_start']}"
             line += "."
         parts.append(line)
+    battery = facts.get("battery")
+    if battery is not None:
+        parts.append(
+            "Home battery: charges at "
+            f"{', '.join(battery['charge_hours']) or 'no time'}, discharges at "
+            f"{', '.join(battery['discharge_hours']) or 'no time'} "
+            "(assumes it starts half full and ends no emptier)."
+        )
+    if facts.get("tank_heating_hours") is not None:
+        parts.append(
+            "Hot water: heats at "
+            f"{', '.join(facts['tank_heating_hours']) or 'no time'}, keeping the comfort band."
+        )
     if decision is Decision.FALLBACK:
         why = "; ".join(problems) or "the optimised plan did not pass the safety checks"
         parts.append(f"Note: every appliance starts as early as its window allows, because {why}.")

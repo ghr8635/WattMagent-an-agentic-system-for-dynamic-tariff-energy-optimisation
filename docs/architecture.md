@@ -11,7 +11,7 @@
 | `optimiser` | MILP (HiGHS via SciPy): EV + battery, one planning day | done |
 | `safety` | Verifier, price-freshness check, fallback plan, audit log; the only path to an executable plan | done |
 | `backtest` | Replay a price series; bill schedules on *actual* prices (EV-only and whole-household) | done |
-| `appliances` | Shiftable cycles, a hot-water tank, a heat pump on building mass, rooftop solar, a home battery and fixed loads: models, MILP, baselines, own verifier and safe pipeline, TOML households and catalogue, backtest, hourly replanning (`replan.py`: pinned history plus a sun nowcast) (`docs/appliances.md`) | done; the API handles cycle requests only, replanning and the battery/tank/solar models run from the command line and the backtest |
+| `appliances` | Shiftable cycles, a hot-water tank, a heat pump on building mass, rooftop solar, a home battery and fixed loads: models, MILP, baselines, own verifier and safe pipeline, TOML households and catalogue, backtest, hourly replanning (`replan.py`: pinned history plus a sun nowcast) (`docs/appliances.md`) | done; the API handles cycle requests and plans a tank and battery alongside (prices only); the heat pump, solar and replanning run from the command line and the backtest |
 | `llm` | HF Inference Providers client, fallback chain, budget, cache | done |
 | `graph` | Agent: parse request, validate, plan (via `safety`), explain; LangGraph or built-in runner | done; `run_replan` plans again from a stored, already validated request |
 | `api` | FastAPI: API keys, rate limit, request IDs, idempotency, health and readiness; framework-free core in `security`, `ratelimit`, `idempotency`, `service` | done (single process; no streaming) |

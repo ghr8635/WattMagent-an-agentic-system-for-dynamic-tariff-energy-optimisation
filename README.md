@@ -57,8 +57,8 @@ schedule, checks that schedule independently, and explains it in a few sentences
 | Weather feed (Open-Meteo archive: temperature, solar radiation) | done; checked against a real reply and a 1,036-day fetch; forecast endpoint **unverified** |
 | Heat pump (building mass as storage, COP from outdoor temperature), optimiser + verifier + fallback | done, tested, **synthetic results only**; the gain depends strongly on the assumed thermal mass (`docs/appliances.md`) |
 | Rooftop solar (radiation -> generation, own use, export/curtail, net-bill cost), verified independently | done, tested; on real prices and weather over 1,035 days the optimiser's cost was 23.0% below running immediately (16.9% below a price- and solar-aware rule), model yield about 1,008 kWh/kWp a year (**run made before a one-hour solar-timing fix; rerun pending**, on synthetic data the fix moved the saving by about 1 point); **not household savings** (assumed appliances, export price, synthetic base load, perfect foresight) |
-| Home battery (price arbitrage and solar surplus, losses, wear cost, no grid export), optimiser + verifier + fallback | done, tested; **synthetic results only**: the gain is 0.31 EUR/day at an assumed 0.05 EUR/kWh wear cost and is nearly gone at 0.10 and zero at 0.15 (`docs/appliances.md`); not yet planned from API requests |
-| Plain-language appliance requests through the API ("run the dishwasher before 8pm"): deterministic parser, same safety pipeline, tested | done; cycles only: tank, heat pump, battery and solar cannot yet be planned from an API request (needs a verified weather forecast); no replanning through the API |
+| Home battery (price arbitrage and solar surplus, losses, wear cost, no grid export), optimiser + verifier + fallback | done, tested; **synthetic results only**: the gain is 0.31 EUR/day at an assumed 0.05 EUR/kWh wear cost and is nearly gone at 0.10 and zero at 0.15 (`docs/appliances.md`); planned from API requests on prices alone (no solar there) |
+| Plain-language appliance requests through the API ("run the dishwasher before 8pm"): deterministic parser, same safety pipeline, tested | done; a request names cycles, and a hot-water tank and home battery in the household are planned alongside (prices only, no weather). Heat pump and solar are not planned from a request (needs a verified weather forecast); no replanning through the API |
 | Fixed loads (fridge, cooking, lighting, TV, standby, home office as hourly profiles), listed per household | done, tested; **illustrative profiles, one shape for every day**, not a forecast (`docs/appliances.md`) |
 | Forecast error measured for the sun (persistence, 3-day mean, blind), cost = same days vs perfect foresight | done, tested; **synthetic weather only**: regret 0.3-0.8% without a battery, 1.7-6.5% with one, likely a lower bound (`docs/appliances.md`); no real forecast source, prices/load/temperature still assumed known |
 | Hourly replanning with a nowcast of the sun, pinned history, time-consistency tested | done, tested; **synthetic weather only**: wins back about 85% of the persistence-forecast regret (`docs/appliances.md`); not run on real data |
@@ -165,7 +165,7 @@ but predates a solar-timing fix and is being rerun.
 
 - One process only: the rate limit, idempotency store and plan store are in memory.
 - Base load is synthetic; cost figures use wholesale prices unless a tariff file is given.
-- Household plans through the API cover cycles only; battery, tank, heat pump and solar are planned from the command line.
+- Household plans through the API cover cycles, tank and battery; the heat pump, solar and hourly replanning are command-line and backtest only.
 - Appliance results are synthetic or assumption-based; no real forecast source is wired in.
 - Image and dependency versions are not locked (no lockfile, no base-image digest yet).
 
