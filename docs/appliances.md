@@ -289,7 +289,7 @@ About 12 solves a day (one per hour, skipped when the plan stands) cost a few se
 deterministic and reuses the charging parser's time rules; 18 labelled phrasings are tested.
 The appliance names come from the household file and the catalogue, so adding a catalogue
 entry teaches the parser its name without code (everyday aliases for washer, dishwasher and
-dryer are built in). Limits: cycles only, English only, no exact start times ("start at 6pm" is
+dryer are built in). The request names cycles; a tank or battery in the household is planned alongside (prices only, no weather), the heat pump and solar are not. Limits: English only, no exact start times ("start at 6pm" is
 read as a deadline), no replanning.
 
 ## Describing a household

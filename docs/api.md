@@ -55,8 +55,13 @@ curl -s -X POST localhost:8000/v1/plans -H "X-API-Key: $KEY" -H "Content-Type: a
 - The same safety rules apply: independent verifier, price-freshness check, one audit record per
   request (counts and a fingerprint only; appliance names stay out of the log).
 - No `plan_id`, and so no replanning: that exists only for the car. No language model is used.
-- Only cycles are planned from a request. The tank, heat pump and solar need weather, and the
-  forecast feed is not verified yet.
+- A request names cycles only, but if the household has a **hot-water tank or a home battery**
+  they are planned in the same day (neither needs weather) and the answer adds `battery`
+  (charge and discharge hours) and `tank_heating_hours`. The battery is assumed to start half
+  full and must end the day no emptier; its wear cost and the tank's comfort band come from the
+  household file and catalogue (assumptions). The **heat pump and solar are left out**: they need
+  a weather forecast, and the forecast feed is not verified yet. The battery is planned on prices
+  alone, so it does not use any solar surplus here.
 - A time with no cue word (`at 6pm`) is a deadline, a bare number is a 24-hour time (`half past
   five` is 05:30), and off-the-hour times are rounded to stay inside what was asked.
 - A bad or unreadable household file stops the service at start-up with a clear message.

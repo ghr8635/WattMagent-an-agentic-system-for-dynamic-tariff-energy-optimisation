@@ -227,3 +227,67 @@ def test_without_a_household_appliance_text_is_a_car_request(tmp_path: Path) -> 
     status, body = fresh_service(tmp_path).plan("run the dishwasher before 6am", "req-1")
     assert body["status"] != "planned" or "cycles" not in (body["facts"] or {})
     assert status in (200, 422)
+
+
+# --- tank and battery are planned in the same day ------------------------------------------------
+
+BATTERY_HOUSE = load_household(ROOT / "config" / "households" / "example_battery.toml")
+
+
+def spread_prices() -> list[PricePoint]:
+    """Cheap nights, dear evenings: a battery with these prices has a reason to move energy."""
+    start = datetime(2025, 1, 1, tzinfo=TZ)
+    out = []
+    for i in range(24 * 5):
+        t = start + timedelta(hours=i)
+        eur = 0.05 if t.hour < 6 else 0.45 if 17 <= t.hour < 22 else 0.20
+        out.append(PricePoint(t, eur))
+    return out
+
+
+def test_a_household_with_tank_and_battery_gets_both_in_the_plan() -> None:
+    resp = run_appliance_agent(
+        "run the dishwasher",
+        BATTERY_HOUSE,
+        ctx(prices=spread_prices()),
+        NOW,
+        audit=InMemoryAuditLog(),
+    )
+    assert resp.status == "planned" and resp.decision == "optimised", resp.message
+    f = resp.facts
+    assert f["tank_heating_hours"] and f["battery"]["charge_hours"]
+    assert "Home battery:" in resp.message and "Hot water:" in resp.message
+    by_hour = {p.start.hour: p.eur_per_kwh for p in spread_prices()}
+
+    def mean_price(hours: list[str]) -> float:
+        return sum(by_hour[int(h[:2])] for h in hours) / len(hours)
+
+    if f["battery"]["discharge_hours"]:  # it only discharges when that pays
+        assert mean_price(f["battery"]["charge_hours"]) < mean_price(
+            f["battery"]["discharge_hours"]
+        )
+
+
+def test_the_heat_pump_and_solar_are_left_out_of_a_request() -> None:
+    # the household has both; with no verified forecast a request must not plan either
+    assert BATTERY_HOUSE.heatpump is not None and BATTERY_HOUSE.solar is not None
+    resp = run_appliance_agent(
+        "run the dishwasher", BATTERY_HOUSE, ctx(prices=spread_prices()), NOW
+    )
+    assert resp.status == "planned"
+    assert "heat pump" not in resp.message.lower() and "solar" not in resp.message.lower()
+
+
+def test_a_cycles_only_household_has_no_battery_or_tank_in_the_answer() -> None:
+    plain = parse_household({"cycle": [{"appliance": "dishwasher"}]})
+    resp = run_appliance_agent("run the dishwasher", plain, ctx(), NOW)
+    assert resp.status == "planned"
+    assert "battery" not in resp.facts and "tank_heating_hours" not in resp.facts
+    assert "Home battery" not in resp.message and "Hot water" not in resp.message
+
+
+def test_stale_prices_still_fall_back_with_a_battery() -> None:
+    resp = run_appliance_agent(
+        "run the dishwasher", BATTERY_HOUSE, ctx(age_h=100, prices=spread_prices()), NOW
+    )
+    assert resp.status == "planned" and resp.decision == "fallback"
