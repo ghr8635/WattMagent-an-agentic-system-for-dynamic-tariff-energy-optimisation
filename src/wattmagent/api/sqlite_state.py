@@ -48,6 +48,7 @@ CREATE INDEX IF NOT EXISTS plans_saved ON plans (saved);
 """
 
 BUSY_TIMEOUT_S = 5.0
+_PREPARE_TRIES = 60
 
 
 class _Database:
@@ -58,12 +59,26 @@ class _Database:
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         existed = self.path.exists()
-        with self.connect() as conn:
-            conn.execute("PRAGMA journal_mode=WAL")  # readers do not block the writer
-            conn.executescript(_SCHEMA)
+        self._prepare()
         if not existed:
             with suppress(OSError):  # some file systems refuse chmod
                 os.chmod(self.path, 0o600)  # the file holds plan details: owner only
+
+    def _prepare(self) -> None:
+        """Create the tables. Several workers may start at the same moment, and switching a new
+        file to WAL mode does not wait for a lock, so a locked database is retried a few times."""
+        for attempt in range(_PREPARE_TRIES):
+            try:
+                with self.connect() as conn:
+                    mode = str(conn.execute("PRAGMA journal_mode").fetchone()[0]).lower()
+                    if mode != "wal":
+                        conn.execute("PRAGMA journal_mode=WAL")  # readers do not block the writer
+                    conn.executescript(_SCHEMA)
+                return
+            except sqlite3.OperationalError as exc:
+                if "locked" not in str(exc) or attempt == _PREPARE_TRIES - 1:
+                    raise
+                time.sleep(0.05 * (attempt % 5 + 1))
 
     @contextmanager
     def connect(self) -> Iterator[sqlite3.Connection]:
