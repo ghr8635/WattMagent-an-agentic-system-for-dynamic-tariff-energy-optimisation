@@ -143,9 +143,9 @@ def test_rate_limit_bad_settings(db: Path) -> None:
 
 def _hit(args: tuple[str, str, int, float]) -> int:
     path, who, n, go_at = args
-    limiter = SqliteRateLimiter(Path(path), limit=20, window_s=3600.0)  # real clock
-    while time.time() < go_at:
+    while time.time() < go_at:  # all processes open the (new) file at the same instant
         pass
+    limiter = SqliteRateLimiter(Path(path), limit=20, window_s=3600.0)  # real clock
     return sum(1 for _ in range(n) if limiter.check(who) == 0.0)
 
 
@@ -159,16 +159,15 @@ def test_four_processes_together_never_exceed_the_limit(db: Path) -> None:
 
 def _race(args: tuple[str, int, float]) -> list[bool]:
     path, keys, go_at = args
-    store = SqliteIdempotencyStore(Path(path))
     while time.time() < go_at:  # every process starts at the same instant: real contention
         pass
+    store = SqliteIdempotencyStore(Path(path))
     return [store.begin("a", f"key-{i}", "fp").kind is Kind.FRESH for i in range(keys)]
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="process pool start-up is slow on Windows")
 def test_only_one_of_many_processes_is_first_for_each_key(db: Path) -> None:
     keys = 300
-    SqliteIdempotencyStore(db)  # create the file first, as the service does at start-up
     with ProcessPoolExecutor(max_workers=4) as pool:
         go_at = time.time() + 1.5
         runs = list(pool.map(_race, [(str(db), keys, go_at)] * 4))
