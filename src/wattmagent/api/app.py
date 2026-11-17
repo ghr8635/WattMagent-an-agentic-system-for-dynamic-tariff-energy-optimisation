@@ -23,6 +23,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from wattmagent import __version__
+from wattmagent.api.backends import IdempotencyBackend, PlanBackend, RateLimitBackend
 from wattmagent.api.idempotency import IdempotencyStore, Kind, StoredResponse
 from wattmagent.api.metrics import ApiMetrics
 from wattmagent.api.plans import PlanStore
@@ -91,17 +92,20 @@ def service_from_settings(settings: Settings) -> PlanService:
             household = load_household(settings.household_file)
         except (ConfigError, OSError) as exc:
             raise RuntimeError(f"WATTMAGENT_HOUSEHOLD_FILE cannot be used: {exc}") from exc
-    return PlanService(
-        provider, audit=audit, llm=llm, store=PlanStore(settings.plan_ttl_s), household=household
-    )
+    plans: PlanBackend = PlanStore(settings.plan_ttl_s)
+    if settings.state_file is not None:
+        from wattmagent.api.sqlite_state import SqlitePlanStore
+
+        plans = SqlitePlanStore(settings.state_file, settings.plan_ttl_s)
+    return PlanService(provider, audit=audit, llm=llm, store=plans, household=household)
 
 
 def create_app(
     settings: Settings | None = None,
     *,
     service: PlanService | None = None,
-    limiter: RateLimiter | None = None,
-    store: IdempotencyStore | None = None,
+    limiter: RateLimitBackend | None = None,
+    store: IdempotencyBackend | None = None,
     metrics: ApiMetrics | None = None,
 ) -> FastAPI:
     """Build the app. Refuses to start without API keys. Tests inject ``service``."""
@@ -109,8 +113,16 @@ def create_app(
     configure_logging(cfg.log_format, cfg.log_level)
     keys = KeyRing(cfg.api_key_set)  # raises if none or too short
     svc = service or service_from_settings(cfg)
-    rate = limiter or RateLimiter(cfg.rate_limit_per_min)
-    idem = store or IdempotencyStore(cfg.idempotency_ttl_s)
+    rate: RateLimitBackend
+    idem: IdempotencyBackend
+    if cfg.state_file is not None:
+        from wattmagent.api.sqlite_state import SqliteIdempotencyStore, SqliteRateLimiter
+
+        rate = limiter or SqliteRateLimiter(cfg.state_file, cfg.rate_limit_per_min)
+        idem = store or SqliteIdempotencyStore(cfg.state_file, cfg.idempotency_ttl_s)
+    else:
+        rate = limiter or RateLimiter(cfg.rate_limit_per_min)
+        idem = store or IdempotencyStore(cfg.idempotency_ttl_s)
     meter = metrics or ApiMetrics(__version__)
     meter.price_age_fn = svc.price_age_hours
 

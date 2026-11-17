@@ -35,7 +35,8 @@ real customers or devices.
 
 ### API and operations
 - [x] Authentication (API keys, constant-time), rate limiting, request IDs, input validation (tested)
-- [ ] Shared state for several replicas: rate limit and idempotency store are in memory, so per process (use Redis or a database)
+- [x] State that survives restarts and is shared by several worker processes on one host: SQLite file (`WATTMAGENT_STATE_FILE`) for the rate limit, idempotency keys and plans; tested with four processes racing, and the same behaviour as the in-memory versions is checked step by step (`tests/unit/test_sqlite_state.py`). The race tests are probabilistic: on correct code they never fail, but a transaction bug is only caught on some runs
+- [ ] Shared state for several **hosts** or replicas: SQLite is single-host only (use Redis or a database). Not yet verified inside the image on a real host: the CI smoke test now writes the file on a writable tmpfs, which is the closest check
 - [ ] Per-IP throttling of failed logins, TLS and key rotation at the proxy
 - [x] Live day-ahead price ingestion with real fetch time, stale-data fallback and strict parsing (tested on a recorded real sample)
 - [x] Structured logs (JSON) and Prometheus metrics: requests, latency, plan outcomes and fallbacks, replays, rate limits, auth failures, price age (tested)

@@ -51,7 +51,9 @@ clients over, then removing the old one.
 ## Known gaps (also in docs/production-checklist.md)
 
 - Base image and dependencies are not pinned by digest or lockfile yet.
-- Rate limit and idempotency live in memory, so run **one** replica until they move to a
-  shared store.
+- With `WATTMAGENT_STATE_FILE` set (the example `.env` does) the rate limit, idempotency keys
+  and plans live in a SQLite file on the data volume: several workers in **one** container or on
+  one host share it, and a restart keeps it. Several hosts or replicas still need a shared
+  database or Redis; without the setting, state is in memory and one process only.
 - No TLS configuration beyond Caddy's defaults for a real domain (`SITE_ADDRESS`).
 - `deploy.sh` has never run against a real host.

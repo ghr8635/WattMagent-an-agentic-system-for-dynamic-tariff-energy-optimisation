@@ -16,6 +16,7 @@ from datetime import UTC, datetime, tzinfo
 from pathlib import Path
 from typing import Any, Protocol
 
+from wattmagent.api.backends import PlanBackend
 from wattmagent.api.plans import PlanStore
 from wattmagent.appliances.agent import run_appliance_agent
 from wattmagent.appliances.household import Household
@@ -128,7 +129,7 @@ class PlanService:
     llm: Completer | None = None
     engine: str = "simple"
     clock: Callable[[], datetime] = lambda: datetime.now(UTC)
-    store: PlanStore = field(default_factory=PlanStore)
+    store: PlanBackend = field(default_factory=PlanStore)
     household: Household | None = None  # enables appliance requests (WATTMAGENT_HOUSEHOLD_FILE)
     _last_fetched: datetime | None = field(default=None, init=False, repr=False)
 

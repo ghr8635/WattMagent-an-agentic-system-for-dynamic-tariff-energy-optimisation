@@ -62,9 +62,10 @@ of the replan call is a separate id, in the logs and the response.
   automatically (for example when prices change or the charge drifts) is not built.
 - **No devices are controlled.** The answer is a plan to follow, not a command.
 - **The reported charge is trusted within 0-100%.** The API cannot check it against the car.
-- **Plans live in memory** for `WATTMAGENT_PLAN_TTL_S` (default 36 h) in one process: a restart
-  forgets them, and a second replica would not know them. A replan of a forgotten plan is a 404;
-  the client can make a new plan.
+- **Plans live for** `WATTMAGENT_PLAN_TTL_S` (default 36 h). In memory (the default) a restart
+  forgets them; with `WATTMAGENT_STATE_FILE` they survive restarts and are shared by workers on
+  one host, but not by several hosts. A replan of a forgotten plan is a 404; the client can make
+  a new plan.
 - **Energy already delivered is not modelled:** the client reports the charge it sees now.
 - Base load is still synthetic, and the cost figures use wholesale prices only.
 - Replanning uses the built-in runner only; the LangGraph engine is not part of it.
