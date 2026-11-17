@@ -38,6 +38,9 @@ class Settings(BaseSettings):
     timezone: str = "Europe/Berlin"
     household_file: Path | None = None  # TOML household: enables appliance requests
     audit_log: Path | None = None  # JSON Lines audit file; None keeps decisions in memory only
+    # SQLite file shared by workers on one host: idempotency keys, rate limit and plans then
+    # survive restarts. None keeps them in memory, per process.
+    state_file: Path | None = None
 
     @property
     def model_chain(self) -> list[str]:

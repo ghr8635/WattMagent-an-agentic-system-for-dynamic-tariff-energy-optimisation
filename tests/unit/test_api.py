@@ -330,3 +330,18 @@ def test_household_file_setting(tmp_path: Path) -> None:
     )  # fmt: skip
     with pytest.raises(RuntimeError, match="WATTMAGENT_HOUSEHOLD_FILE"):
         service_from_settings(missing)
+
+
+def test_two_workers_on_one_state_file_share_idempotency_and_plans(tmp_path: Path) -> None:
+    state = tmp_path / "state.sqlite3"
+    cfg = Settings(api_keys=KEY, state_file=state, _env_file=None)
+    audit = InMemoryAuditLog()
+    worker_1 = TestClient(create_app(cfg, service=fresh_service(tmp_path, audit)))
+    worker_2 = TestClient(create_app(cfg, service=fresh_service(tmp_path, audit)))
+    headers = {**AUTH, "Idempotency-Key": "shared-0001"}
+    first = worker_1.post("/v1/plans", json={"text": TEXT}, headers=headers)
+    second = worker_2.post("/v1/plans", json={"text": TEXT}, headers=headers)
+    assert first.status_code == second.status_code == 200
+    assert second.headers["Idempotent-Replay"] == "true" and second.json() == first.json()
+    assert len(audit.entries) == 1  # planned once, although two workers were asked
+    assert state.exists()

@@ -85,7 +85,13 @@ curl -s -X POST localhost:8000/v1/plans -H "X-API-Key: $KEY" -H "Content-Type: a
   check forces the safe fallback. A missing hour is caught the same way: `/readyz` stays
   "not ready" until the feed covers the next 24 h. A refresh waits on a lock, so requests
   arriving during a refresh wait for it (at most the 10 s fetch timeout per file).
-- **Limits of this version:** rate limit and idempotency are in memory, so they hold per
-  process; a second replica would count separately. Base load is synthetic. With the `csv` source,
+- **State:** by default the rate limit, idempotency keys and plans are in memory, per process.
+  Set `WATTMAGENT_STATE_FILE` to a writable path and all three live in one SQLite file instead:
+  they survive restarts and several worker processes on **one host** count together (immediate
+  write transactions, so only one worker is ever first for a key). It is not for several hosts
+  (SQLite over a network file system is unsafe); that needs a real database or Redis. A database
+  error fails the request with a 500 rather than skipping a check. The file holds plan details,
+  never keys or request text: keep it on a private volume.
+- **Limits of this version:** Base load is synthetic. With the `csv` source,
   prices come from a file whose modification time stands in for the fetch time, which
   re-converting an old export can fake; the `smard` source records the real fetch time.

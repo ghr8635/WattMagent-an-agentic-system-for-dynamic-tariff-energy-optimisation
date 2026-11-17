@@ -48,7 +48,7 @@ schedule, checks that schedule independently, and explains it in a few sentences
 | Agent: request -> validated constraints -> safe plan -> explanation | done; built-in runner and LangGraph runner give identical results (parity test in CI) |
 | Deterministic language backend (default), 40 labelled parsing cases | done; graded by `python -m wattmagent.graph --eval` and a CI gate. A regression guard, not a measure of accuracy on real users' wording |
 | Replanning from the car's real charge, the time left and fresh prices | done, on request: a client has to call it, nothing triggers it by itself |
-| HTTP API: API keys, rate limit, request IDs, idempotency, health and readiness | done, tested |
+| HTTP API: API keys, rate limit, request IDs, idempotency, health and readiness | done, tested; state is in memory by default, or in a SQLite file that survives restarts and is shared by workers on one host (`WATTMAGENT_STATE_FILE`); not for several hosts |
 | Observability: Prometheus metrics, JSON logs, suggested alert rules | done; **no monitoring stack is deployed**, so nothing sends alerts yet |
 | CI: lint, types, tests, secret scan, dependency audit, image build, container smoke test, image scan | green on GitHub Actions |
 | Docker image (non-root, read-only, no capabilities) | built and smoke-tested in CI; **never run on a real host** |
@@ -163,7 +163,7 @@ but predates a solar-timing fix and is being rerun.
 
 ## Known limits
 
-- One process only: the rate limit, idempotency store and plan store are in memory.
+- Several hosts or replicas are not supported: the rate limit, idempotency keys and plans are in memory by default, or in one local SQLite file (`WATTMAGENT_STATE_FILE`) shared by workers on one host.
 - Base load is synthetic; cost figures use wholesale prices unless a tariff file is given.
 - Household plans through the API cover cycles, tank and battery; the heat pump, solar and hourly replanning are command-line and backtest only.
 - Appliance results are synthetic or assumption-based; no real forecast source is wired in.

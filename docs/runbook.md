@@ -24,8 +24,8 @@ starting points. Commands assume the compose setup in `docs/deploy.md`.
 | 401 on every call | Key not in `WATTMAGENT_API_KEYS`, or the env file was not reloaded | Check the key list, restart `api`. |
 | 429 | Per-key rate limit (default 20/min) | Expected under bursts; raise `WATTMAGENT_RATE_LIMIT_PER_MIN` only after a load test. |
 | Idempotency replay returns an old answer | Same `Idempotency-Key` reused | By design; use a new key for a new request. |
-| Plans vanish after a restart, `replan` says unknown id | Plan store is in memory | Known gap; clients must send a new plan request. |
-| Different answers from two replicas | Rate limit and idempotency live in memory | Run **one** replica until they move to a shared store. |
+| Plans vanish after a restart, `replan` says unknown id | `WATTMAGENT_STATE_FILE` is not set, so the plan store is in memory (or the plan is older than its 36 h life) | Set `WATTMAGENT_STATE_FILE` on the data volume; otherwise clients must send a new plan request. |
+| Different answers from two replicas | State is per host (memory or a local SQLite file) | Run **one** host until a shared database or Redis is added. Several workers on one host are fine with `WATTMAGENT_STATE_FILE`. |
 | Container exits at start | Missing `WATTMAGENT_API_KEYS`, bad household file, or csv price source in production | The log names the setting; the app refuses to start rather than run unsafe. |
 
 ## Deploy and roll back

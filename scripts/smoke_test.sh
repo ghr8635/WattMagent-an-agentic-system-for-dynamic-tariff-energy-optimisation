@@ -52,8 +52,10 @@ chmod 755 "$WORK"
 chmod 644 "$WORK/prices.csv"
 
 docker run -d --name "$NAME" -p "127.0.0.1:${PORT}:8000" \
-  --read-only --tmpfs /tmp --cap-drop ALL --security-opt no-new-privileges:true \
+  --read-only --tmpfs /tmp --tmpfs /state:rw,uid=10001,gid=10001,mode=0700 \
+  --cap-drop ALL --security-opt no-new-privileges:true \
   -e WATTMAGENT_API_KEYS="$KEY" \
+  -e WATTMAGENT_STATE_FILE=/state/state.sqlite3 \
   -e WATTMAGENT_PRICE_SOURCE=csv \
   -e WATTMAGENT_PRICE_CSV=/data/prices.csv \
   -v "$WORK:/data:ro" \
@@ -84,6 +86,8 @@ head -1 "$WORK/h1" | grep -q ' 200' || fail "plan request did not return 200: $(
 grep -qi '^x-request-id:' "$WORK/h1" || fail "response has no X-Request-ID"
 grep -qi '^idempotent-replay: true' "$WORK/h2" || fail "repeat with the same Idempotency-Key was not a replay"
 cmp -s "$WORK/b1" "$WORK/b2" || fail "replayed answer differs from the first answer"
+
+docker exec "$NAME" test -e /state/state.sqlite3 || fail "the shared state file was not created"
 
 curl -fsS "$BASE/metrics" | grep -q '^wattmagent_http_requests_total{method="POST",route="/v1/plans",status="200"}' \
   || fail "/metrics has no count for the plan requests"
