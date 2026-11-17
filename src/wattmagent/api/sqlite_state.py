@@ -164,7 +164,7 @@ class SqliteRateLimiter:
                 "SELECT COUNT(*), MIN(t) FROM rate_hits WHERE who = ?", (who,)
             ).fetchone()
             if count >= self._limit:
-                return max(self._window - (now - oldest), 0.001)
+                return max(self._window - (now - float(oldest)), 0.001)
             conn.execute("INSERT INTO rate_hits (who, t) VALUES (?, ?)", (who, now))
             return 0.0
 
