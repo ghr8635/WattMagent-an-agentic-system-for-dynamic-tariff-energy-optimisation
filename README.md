@@ -49,7 +49,7 @@ schedule, checks that schedule independently, and explains it in a few sentences
 | Deterministic language backend (default), 40 labelled parsing cases | done; graded by `python -m wattmagent.graph --eval` and a CI gate. A regression guard, not a measure of accuracy on real users' wording |
 | Replanning from the car's real charge, the time left and fresh prices | done, on request: a client has to call it, nothing triggers it by itself |
 | HTTP API: API keys, rate limit, request IDs, idempotency, health and readiness | done, tested; state is in memory by default, or in a SQLite file that survives restarts and is shared by workers on one host (`WATTMAGENT_STATE_FILE`); not for several hosts |
-| Observability: Prometheus metrics, JSON logs, suggested alert rules | done; **no monitoring stack is deployed**, so nothing sends alerts yet |
+| Observability: Prometheus metrics, JSON logs, suggested alert rules | done; optional Prometheus profile with six alert rules (rule logic checked in CI); **nothing is delivered to anyone yet** (no Alertmanager) |
 | CI: lint, types, tests, secret scan, dependency audit, image build, container smoke test, image scan | green on GitHub Actions |
 | Docker image (non-root, read-only, no capabilities) | built and smoke-tested in CI; **never run on a real host** |
 | Language model backend (Hugging Face / local Ollama) | code and tests done with fakes; **no real model has produced a verified result**. A local 1.5B model answered with garbage, and the free Hugging Face tier has no inference credits |

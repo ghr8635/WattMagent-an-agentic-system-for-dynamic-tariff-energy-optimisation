@@ -48,5 +48,5 @@ one, restart. Never put keys in the image, the repo or the audit log.
 
 ## What this runbook does not cover
 
-Alerting (no monitoring stack yet), backups (the audit log lives in a named volume), TLS
+Alert delivery (Prometheus rules exist as an optional profile, but nothing is sent), backups (the audit log lives in a named volume), TLS
 beyond Caddy defaults, and multi-replica operation.

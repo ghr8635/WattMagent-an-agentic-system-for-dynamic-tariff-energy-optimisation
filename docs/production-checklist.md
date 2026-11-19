@@ -41,7 +41,8 @@ real customers or devices.
 - [x] Live day-ahead price ingestion with real fetch time, stale-data fallback and strict parsing (tested on a recorded real sample)
 - [x] Structured logs (JSON) and Prometheus metrics: requests, latency, plan outcomes and fallbacks, replays, rate limits, auth failures, price age (tested)
 - [ ] Metrics not built yet: token use and cache hits (they matter once the model backend is on), plan cost; distributed tracing
-- [ ] A monitoring stack that scrapes `/metrics` and sends alerts (none is deployed; see docs/observability.md)
+- [x] Prometheus scrapes `/metrics` and evaluates six alert rules (optional compose profile `monitoring`; config and rule logic checked by promtool in CI, which has not run yet on a real host)
+- [ ] Alerts delivered to someone: Alertmanager with a real route (e-mail, chat), a dashboard, a blackbox probe of `/readyz`, and unit tests for the other three alerts
 - [x] Health (`/healthz`) and readiness (`/readyz`: prices present, fresh, covering the window)
 - [ ] Locked dependency versions (lockfile) and reproducible builds
 - [x] Container smoke test in CI: non-root user, read-only filesystem, no capabilities, 401 without a key, replay on repeated `Idempotency-Key` (`scripts/smoke_test.sh`)

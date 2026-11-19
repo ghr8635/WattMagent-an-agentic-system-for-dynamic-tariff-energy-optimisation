@@ -44,8 +44,23 @@ scrape it from inside the network.
 
 ## Suggested alerts
 
-These are recommendations to set up in a monitoring system. **No monitoring stack is
-deployed yet**, so nothing sends these today.
+These rules are in `deploy/monitoring/alerts.yml` and run in an optional Prometheus container:
+
+```
+docker compose -f deploy/compose.yaml --profile monitoring up -d
+```
+
+Prometheus (`prom/prometheus:v2.55.1`, UI on `127.0.0.1:9090` only) scrapes `api:8000/metrics`
+inside the compose network and evaluates the rules; open `/alerts` in its UI to see what fires.
+**Nothing is sent to anyone yet**: there is no Alertmanager, no e-mail or chat route, and no
+dashboard. Metrics are per process, so with several workers a scrape reaches one of them at
+random; run one worker per container if you rely on these alerts.
+
+CI checks the config with `promtool check config` and `check rules`, unit-tests three alerts
+(`PricesStale`, `FallbackRateHigh`, `ServerErrors`) on synthetic series with `promtool test
+rules`, and a Python test fails if a rule or test uses a metric the API does not export.
+`ApiDown`, `SlowPlans` and `AuthFailuresSpike` are not unit-tested yet. The "not ready"
+probe of `/readyz` below needs a blackbox exporter and is not set up.
 
 | Alert | Rule (PromQL) | Why |
 |---|---|---|

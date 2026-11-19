@@ -70,6 +70,12 @@ jobs:
         run: |
           cp .env.example .env
           docker compose -f deploy/compose.yaml config -q
+      - name: Check the monitoring config and test the alert rules
+        run: |
+          P=prom/prometheus:v2.55.1
+          docker run --rm --entrypoint promtool -v "$PWD/deploy/monitoring:/m:ro" -w /m $P check config prometheus.yml
+          docker run --rm --entrypoint promtool -v "$PWD/deploy/monitoring:/m:ro" -w /m $P check rules alerts.yml
+          docker run --rm --entrypoint promtool -v "$PWD/deploy/monitoring:/m:ro" -w /m $P test rules alerts_test.yml
       - name: Scan image
         uses: aquasecurity/trivy-action@v0.36.0
         with:
