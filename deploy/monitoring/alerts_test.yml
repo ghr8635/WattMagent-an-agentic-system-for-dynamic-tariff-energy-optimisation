@@ -1,0 +1,79 @@
+# Unit tests for alerts.yml:  promtool test rules deploy/monitoring/alerts_test.yml
+rule_files:
+  - alerts.yml
+
+evaluation_interval: 1m
+
+tests:
+  - interval: 1m
+    input_series:
+      - series: 'wattmagent_price_age_hours'
+        values: '31+0x40'
+    alert_rule_test:
+      - eval_time: 5m # still inside the 10 minute wait
+        alertname: PricesStale
+        exp_alerts: []
+      - eval_time: 30m
+        alertname: PricesStale
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: Prices are older than 30 h; the freshness limit is 36 h, after which plans fall back.
+
+  - interval: 1m
+    input_series:
+      - series: 'wattmagent_price_age_hours'
+        values: '5+0x40'
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: PricesStale
+        exp_alerts: []
+
+  - interval: 1m
+    input_series:
+      - series: 'wattmagent_plan_results_total{status="planned",decision="fallback"}'
+        values: '0+1x120'
+      - series: 'wattmagent_plan_results_total{status="planned",decision="optimised"}'
+        values: '0+1x120'
+    alert_rule_test:
+      - eval_time: 90m # half of all plans are fallbacks
+        alertname: FallbackRateHigh
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: More than 10% of plans use the safe fallback (stale prices, or optimiser or verifier trouble).
+
+  - interval: 1m
+    input_series:
+      - series: 'wattmagent_plan_results_total{status="planned",decision="fallback"}'
+        values: '0+0x120'
+      - series: 'wattmagent_plan_results_total{status="planned",decision="optimised"}'
+        values: '0+1x120'
+    alert_rule_test:
+      - eval_time: 90m # no fallbacks
+        alertname: FallbackRateHigh
+        exp_alerts: []
+
+  - interval: 1m
+    input_series:
+      - series: 'wattmagent_http_requests_total{method="POST",route="/v1/plans",status="500"}'
+        values: '0+1x60'
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: ServerErrors
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+            exp_annotations:
+              summary: The API has been returning 5xx errors for 10 minutes.
+
+  - interval: 1m
+    input_series:
+      - series: 'wattmagent_http_requests_total{method="POST",route="/v1/plans",status="200"}'
+        values: '0+1x60'
+    alert_rule_test:
+      - eval_time: 30m # successes are not errors
+        alertname: ServerErrors
+        exp_alerts: []

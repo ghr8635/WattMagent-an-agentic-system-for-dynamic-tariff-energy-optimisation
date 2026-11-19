@@ -1,0 +1,16 @@
+# Prometheus for WattMagent. Start it with:  docker compose -f deploy/compose.yaml --profile monitoring up -d
+# It scrapes the API inside the compose network (/metrics is hidden from outside by Caddy) and
+# evaluates alerts.yml. No Alertmanager is configured, so alerts are visible in the Prometheus
+# UI (http://127.0.0.1:9090/alerts) but nothing is sent to anyone yet.
+global:
+  scrape_interval: 15s
+  evaluation_interval: 1m
+
+rule_files:
+  - alerts.yml
+
+scrape_configs:
+  - job_name: wattmagent
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["api:8000"]

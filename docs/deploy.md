@@ -12,7 +12,7 @@
 | Deploy and rollback | `deploy/deploy.sh` | written, **untested**: there is no host yet |
 
 `/metrics` is blocked at the Caddy proxy (404 from outside) and meant to be scraped from
-inside the network, for example by a Prometheus container on the same compose network
+inside the network, for example by the optional Prometheus container (`--profile monitoring`, see docs/observability.md)
 that targets `api:8000`.
 
 ## What the smoke test proves

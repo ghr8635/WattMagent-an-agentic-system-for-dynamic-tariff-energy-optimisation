@@ -23,7 +23,25 @@ services:
     depends_on: [api]
     restart: unless-stopped
 
+  # Optional: docker compose -f deploy/compose.yaml --profile monitoring up -d
+  # Prometheus scrapes the API and evaluates the alert rules; its UI is on localhost only.
+  # No Alertmanager yet, so alerts are visible in the UI but not sent anywhere.
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    profiles: [monitoring]
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=15d
+    ports: ["127.0.0.1:9090:9090"]
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - prometheus_data:/prometheus
+    depends_on: [api]
+    restart: unless-stopped
+
 volumes:
   audit:
   llm_cache:
   caddy_data:
+  prometheus_data:
