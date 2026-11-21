@@ -189,3 +189,8 @@ Weather data: [Open-Meteo.com](https://open-meteo.com), licensed CC BY 4.0.
 - Every number in this README comes from a script in this repository.
 - External calls sit behind interfaces; unit tests use fakes and need no network.
 - Simulated and synthetic results are always labelled as such.
+
+## Home Assistant (advice mode)
+
+Plans can be published to Home Assistant as advice only: a sensor and an event with an expiry on every item. It calls no Home Assistant service and cannot switch a device; dry run is the default. Tested against a fake server, **not yet against a real Home Assistant**. See docs/home-assistant.md.
+
