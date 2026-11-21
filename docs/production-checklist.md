@@ -61,3 +61,5 @@ real customers or devices.
 
 ### Privacy
 - [ ] No personal data in logs; minimal data stored; retention documented
+- [x] Home Assistant advice mode: plans published as advice only (no service call, own entities and events only, dry run by default, expiry on every item, token never shown), tested against a fake server (`docs/home-assistant.md`)
+- [ ] Verified against a real Home Assistant; a scheduled publisher; automatic control (not built on purpose, needs opt-in, per-device limits and a kill switch)

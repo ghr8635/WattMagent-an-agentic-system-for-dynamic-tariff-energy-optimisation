@@ -59,6 +59,7 @@ files = [
     "src/wattmagent/safety",
     "src/wattmagent/graph",
     "src/wattmagent/tariff",
+    "src/wattmagent/integrations",
     "src/wattmagent/backtest",
     "src/wattmagent/api",
     "src/wattmagent/appliances",

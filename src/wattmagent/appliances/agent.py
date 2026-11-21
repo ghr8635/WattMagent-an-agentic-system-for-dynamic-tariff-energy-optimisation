@@ -198,6 +198,8 @@ def _facts(
                 "start_day": _day_word(begin, now),
                 "end": _hhmm(end),
                 "end_day": _day_word(end, now),
+                "start_at": begin.isoformat(),  # timezone-aware, for programs
+                "end_at": end.isoformat(),
                 "window_start": _hhmm(windows[name][0]),
                 "window_start_day": _day_word(windows[name][0], now),
                 "window_end": _hhmm(windows[name][1]),
@@ -216,10 +218,17 @@ def _facts(
         facts["battery"] = {
             "charge_hours": _hours(starts, safe.plan.battery_charge_kw),
             "discharge_hours": _hours(starts, safe.plan.battery_discharge_kw),
+            "charge_at": _stamps(starts, safe.plan.battery_charge_kw),
+            "discharge_at": _stamps(starts, safe.plan.battery_discharge_kw),
         }
     if inputs.tank is not None:
         facts["tank_heating_hours"] = _hours(starts, safe.plan.tank_kw)
+        facts["tank_heating_at"] = _stamps(starts, safe.plan.tank_kw)
     return facts
+
+
+def _stamps(starts: list[datetime], series: list[float]) -> list[str]:
+    return [t.isoformat() for t, v in zip(starts, series, strict=False) if v > 1e-6]
 
 
 def _hours(starts: list[datetime], series: list[float]) -> list[str]:

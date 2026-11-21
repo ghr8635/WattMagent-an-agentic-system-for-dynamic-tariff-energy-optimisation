@@ -54,6 +54,7 @@ curl -s -X POST localhost:8000/v1/plans -H "X-API-Key: $KEY" -H "Content-Type: a
 - A request about the car **or** the appliances, not both: a mixed request gets a question back.
 - The same safety rules apply: independent verifier, price-freshness check, one audit record per
   request (counts and a fingerprint only; appliance names stay out of the log).
+- The answer's `facts` carry timezone-aware `start_at` and `end_at` for programs (and `charge_at`, `discharge_at`, `tank_heating_at` for the battery and tank); `docs/home-assistant.md` turns them into advice for Home Assistant.
 - No `plan_id`, and so no replanning: that exists only for the car. No language model is used.
 - A request names cycles only, but if the household has a **hot-water tank or a home battery**
   they are planned in the same day (neither needs weather) and the answer adds `battery`
