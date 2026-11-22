@@ -63,3 +63,11 @@ real customers or devices.
 - [ ] No personal data in logs; minimal data stored; retention documented
 - [x] Home Assistant advice mode: plans published as advice only (no service call, own entities and events only, dry run by default, expiry on every item, token never shown), tested against a fake server (`docs/home-assistant.md`)
 - [ ] Verified against a real Home Assistant; a scheduled publisher; automatic control (not built on purpose, needs opt-in, per-device limits and a kill switch)
+
+## Web page
+
+- [x] Served by the API, strict CSP, key in memory only, data routes behind key and rate limit.
+- [ ] Checked on a real host behind TLS, with real prices.
+- [ ] Real consumption (Home Assistant history or a meter); the energy view is planned only.
+- [ ] Heat pump and solar in the page's plan (needs a verified weather forecast).
+- [ ] Cross-browser and screen-reader check.

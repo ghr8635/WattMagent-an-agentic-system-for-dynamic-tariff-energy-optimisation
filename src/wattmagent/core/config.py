@@ -41,6 +41,8 @@ class Settings(BaseSettings):
     # SQLite file shared by workers on one host: idempotency keys, rate limit and plans then
     # survive restarts. None keeps them in memory, per process.
     state_file: Path | None = None
+    # a line shown at the top of the web page, e.g. to label a demo as synthetic
+    ui_banner: str = ""
 
     @property
     def model_chain(self) -> list[str]:

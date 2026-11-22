@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>WattMagent</title>
+  <link rel="stylesheet" href="/ui/style.css">
+  <script src="/ui/app.js" defer></script>
+</head>
+<body>
+  <div id="banner" class="banner" hidden></div>
+  <header class="bar">
+    <h1>WattMagent</h1>
+    <form id="key-form" class="key">
+      <label for="key">API key</label>
+      <input id="key" type="password" autocomplete="off" spellcheck="false" placeholder="kept in this tab only">
+      <button type="submit">Connect</button>
+    </form>
+    <div class="tools">
+      <div class="seg" role="group" aria-label="Day">
+        <button type="button" id="day-today" aria-pressed="true">Today</button>
+        <button type="button" id="day-tomorrow" aria-pressed="false">Tomorrow</button>
+      </div>
+      <button type="button" id="theme" aria-label="Switch light or dark theme">Theme</button>
+    </div>
+  </header>
+
+  <main>
+    <p id="status" class="status" role="status">Enter the API key to load the plan.</p>
+
+    <section class="card" aria-labelledby="h-chat">
+      <h2 id="h-chat">Ask for a plan</h2>
+      <form id="chat-form" class="chat">
+        <label for="chat-text" class="sr">Request</label>
+        <input id="chat-text" type="text" maxlength="500" placeholder="e.g. run the dishwasher by 10pm" autocomplete="off">
+        <button type="submit">Plan</button>
+      </form>
+      <div id="chat-log" class="chatlog" aria-live="polite"></div>
+    </section>
+
+    <section class="card" aria-labelledby="h-sum">
+      <h2 id="h-sum">The day</h2>
+      <div id="summary" class="summary"></div>
+      <ul id="labels" class="labels"></ul>
+    </section>
+
+    <section class="card" aria-labelledby="h-price">
+      <h2 id="h-price">Day-ahead price, planned hours shaded</h2>
+      <div id="chart-price" class="chart"></div>
+      <p class="note" id="price-note"></p>
+    </section>
+
+    <section class="card" aria-labelledby="h-plan">
+      <h2 id="h-plan">Plan timeline</h2>
+      <div id="chart-timeline" class="chart"></div>
+      <ul id="items" class="items"></ul>
+    </section>
+
+    <section class="card" aria-labelledby="h-energy">
+      <h2 id="h-energy">Energy by hour <span class="tag">planned, not measured</span></h2>
+      <div id="chart-energy" class="chart"></div>
+      <div id="legend-energy" class="legend"></div>
+    </section>
+
+    <section class="card" id="storage-card" aria-labelledby="h-storage" hidden>
+      <h2 id="h-storage">Battery and hot water tank <span class="tag">simulated</span></h2>
+      <div id="chart-battery" class="chart"></div>
+      <div id="chart-tank" class="chart"></div>
+    </section>
+
+    <section class="card" aria-labelledby="h-log">
+      <h2 id="h-log">Recent decisions</h2>
+      <div class="tablewrap">
+        <table id="decisions">
+          <thead><tr><th>Time</th><th>Kind</th><th>Decision</th><th>Verifier</th><th>Cost</th><th>Reasons</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+  <footer class="foot">Planned values come from the optimiser and a simulation, not from a meter. Prices are wholesale only, without fees or taxes.</footer>
+</body>
+</html>
