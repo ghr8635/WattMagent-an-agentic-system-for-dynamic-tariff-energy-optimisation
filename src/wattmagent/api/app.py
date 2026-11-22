@@ -9,6 +9,7 @@ the annotations of the handlers defined inside ``create_app`` at definition time
 """
 
 import hashlib
+import importlib.resources
 import logging
 import math
 import re
@@ -36,6 +37,7 @@ from wattmagent.api.service import (
     PlanService,
     ServiceUnavailable,
 )
+from wattmagent.api.ui_views import UiError
 from wattmagent.core.config import Settings
 from wattmagent.core.errors import ReplanError
 from wattmagent.core.logsetup import configure_logging
@@ -98,6 +100,18 @@ def service_from_settings(settings: Settings) -> PlanService:
 
         plans = SqlitePlanStore(settings.state_file, settings.plan_ttl_s)
     return PlanService(provider, audit=audit, llm=llm, store=plans, household=household)
+
+
+UI_HEADERS = {
+    # only its own files, only this server, nothing inline, nothing framed
+    "Content-Security-Policy": (
+        "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; "
+        "connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+    ),
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "no-referrer",
+    "Cache-Control": "no-cache",
+}
 
 
 def create_app(
@@ -290,6 +304,37 @@ def create_app(
             f"{plan_id}|{body.current_percent}|{body.battery_percent}".encode()
         ).hexdigest()
         return idempotent(who, idempotency_key, fingerprint, run)
+
+    # ---- the web page: static files, no build step; data comes from the key-protected routes ----
+    ui_files = {
+        "": ("index.html", "text/html; charset=utf-8"),
+        "/app.js": ("app.js", "text/javascript; charset=utf-8"),
+        "/style.css": ("style.css", "text/css; charset=utf-8"),
+    }
+
+    def ui_asset(name: str, media_type: str) -> Response:
+        body = importlib.resources.files("wattmagent.api").joinpath("ui", name).read_bytes()
+        return Response(body, media_type=media_type, headers=UI_HEADERS)
+
+    for route, (file_name, media) in ui_files.items():
+        # the page itself carries no data and no key; the browser sends the key with each data call
+        app.add_api_route(
+            f"/ui{route}",
+            (lambda n=file_name, m=media: ui_asset(n, m)),
+            methods=["GET"],
+            include_in_schema=False,
+        )
+
+    @app.get("/v1/ui/day")
+    def ui_day(who: Annotated[str, Depends(require_key)], day: str = "today") -> JSONResponse:
+        try:
+            return JSONResponse({**svc.day_view(day), "banner": cfg.ui_banner})
+        except UiError as exc:
+            raise HTTPException(exc.status_code, str(exc)) from exc
+
+    @app.get("/v1/ui/decisions")
+    def ui_decisions(who: Annotated[str, Depends(require_key)], limit: int = 20) -> JSONResponse:
+        return JSONResponse({"decisions": svc.recent_decisions(limit)})
 
     @app.get("/metrics")
     def metrics_endpoint() -> Response:

@@ -63,6 +63,7 @@ schedule, checks that schedule independently, and explains it in a few sentences
 | Forecast error measured for the sun (persistence, 3-day mean, blind), cost = same days vs perfect foresight | done, tested; **synthetic weather only**: regret 0.3-0.8% without a battery, 1.7-6.5% with one, likely a lower bound (`docs/appliances.md`); no real forecast source, prices/load/temperature still assumed known |
 | Hourly replanning with a nowcast of the sun, pinned history, time-consistency tested | done, tested; **synthetic weather only**: wins back about 85% of the persistence-forecast regret (`docs/appliances.md`); not run on real data |
 | Real forecasts (weather service, load, price publication) | not started; the sun forecast used so far is built from past observations, prices are assumed known, load and temperature are not forecast |
+| Web page served by the API (chat, plan timeline, price chart, planned energy by hour, decision log; light and dark) | done; plain HTML/CSS/JS, strict CSP, key held in browser memory only; data routes sit behind the same key and rate limit; checked in headless Chrome here, **not on a real host or with real data**; shows *planned* energy, there is no meter data (`docs/web-ui.md`) |
 | Deployment to a host, rollback, load and failure tests, runbook | `deploy/deploy.sh` is written but untested; the rest not started |
 
 No household savings figure is claimed. See "Results" below and `docs/results.md`.
@@ -173,7 +174,7 @@ but predates a solar-timing fix and is being rerun.
 
 `docs/architecture.md` (modules and decisions), `docs/optimiser.md`, `docs/safety.md`,
 `docs/agent.md` (language backends), `docs/replanning.md`, `docs/api.md`,
-`docs/observability.md`, `docs/deploy.md`, `docs/data.md`, `docs/tariff.md`,
+`docs/observability.md`, `docs/web-ui.md`, `docs/deploy.md`, `docs/data.md`, `docs/tariff.md`,
 `docs/results.md`, `docs/appliances.md`, `docs/local-models.md`, and the open work in `docs/production-checklist.md`.
 
 ## Data credit
@@ -189,6 +190,74 @@ Weather data: [Open-Meteo.com](https://open-meteo.com), licensed CC BY 4.0.
 - Every number in this README comes from a script in this repository.
 - External calls sit behind interfaces; unit tests use fakes and need no network.
 - Simulated and synthetic results are always labelled as such.
+
+## Web page
+
+The API serves a small page at `/ui`: a request box (calls `POST /v1/plans`), the day-ahead price with the planned hours shaded, a timeline per appliance, tank and battery, planned energy by hour, simulated battery and tank state, and the recent decisions from the audit log. It is plain HTML, CSS and JavaScript with no framework, build step or CDN, and a strict Content-Security-Policy. The API key is typed into the page and held in memory only. It needs a household file (`WATTMAGENT_HOUSEHOLD_FILE`).
+
+**Energy shown is planned, not measured:** the system has no meter data, and the page says so. Prices are wholesale only. The heat pump and solar are not part of the page's plan (no verified weather forecast). To try it with invented prices, labelled on the page: `python scripts/demo_prices.py data/demo_prices.csv`, then see `docs/web-ui.md`.
+
+## Architecture
+
+Four views of the same system. Each box is a module in `src/wattmagent`.
+
+**1. Request path**
+
+```mermaid
+flowchart LR
+  U[Client or web page] -->|X-API-Key| A[API: key, rate limit, idempotency]
+  A --> S[PlanService]
+  S --> L[Language layer: rules, optional LLM]
+  L --> V[Validate: bounds, rounding]
+  V --> O[MILP optimiser]
+  O --> W[Independent verifier]
+  W -->|pass| E[Explain]
+  W -->|fail or stale prices| F[Safe fallback]
+  F --> E
+  E --> U
+  W --> AU[(Audit log)]
+  F --> AU
+```
+
+**2. Data and planning**
+
+```mermaid
+flowchart LR
+  SM[SMARD day-ahead prices] --> P[Price provider]
+  CSV[Price CSV] --> P
+  P --> C[AgentContext: prices, fetch time, time zone]
+  H[Household TOML: cycles, tank, battery, fixed loads] --> I[Day inputs]
+  C --> I
+  I --> M[MILP, HiGHS, 10 s limit]
+  M --> PL[Plan]
+  PL --> SIM[Simulators: battery, tank, bill]
+```
+
+**3. Safety layer**
+
+```mermaid
+flowchart TB
+  PL[Plan] --> FR{Prices fresh and complete?}
+  FR -->|no| FB[Run-immediately fallback]
+  FR -->|yes| VR{Verifier: windows, power limits, battery and tank state, cost vs baseline}
+  VR -->|fail| FB
+  VR -->|pass| OK[Plan accepted]
+  FB --> AUD[(Audit record)]
+  OK --> AUD
+  FB -.->|nothing safe| X[Request refused]
+```
+
+**4. Deployment**
+
+```mermaid
+flowchart LR
+  B[Browser or client] --> CY[Caddy: TLS, /metrics hidden]
+  CY --> AP[API container, non-root, read-only]
+  AP --> ST[(SQLite state file, one host)]
+  AP --> AL[(Audit JSONL)]
+  PR[Prometheus, optional profile] -->|scrape /metrics| AP
+  PR --> RU[Alert rules, tested in CI]
+```
 
 ## Home Assistant (advice mode)
 

@@ -18,6 +18,7 @@ from typing import Any, Protocol
 
 from wattmagent.api.backends import PlanBackend
 from wattmagent.api.plans import PlanStore
+from wattmagent.api.ui_views import MAX_DECISIONS, UiError, build_day_view, decision_rows
 from wattmagent.appliances.agent import run_appliance_agent
 from wattmagent.appliances.household import Household
 from wattmagent.appliances.request import mentions_appliance
@@ -132,6 +133,9 @@ class PlanService:
     store: PlanBackend = field(default_factory=PlanStore)
     household: Household | None = None  # enables appliance requests (WATTMAGENT_HOUSEHOLD_FILE)
     _last_fetched: datetime | None = field(default=None, init=False, repr=False)
+    _view: tuple[tuple[str, str], dict[str, Any]] | None = field(
+        default=None, init=False, repr=False
+    )
 
     def price_age_hours(self) -> float | None:
         """Age of the prices seen at last use, or None before the first use."""
@@ -256,3 +260,34 @@ class PlanService:
             window_start=window_start_for(now),
             slots=HORIZON_HOURS,
         )
+
+    def day_view(self, day: str = "today") -> dict[str, Any]:
+        """The household's local day as the web page shows it (planned, not measured).
+
+        Planning takes a moment, so the answer is kept for as long as the day, the hour and the
+        prices it was made from stay the same. Raises ``UiError`` where there is nothing to show.
+        """
+        if self.household is None:
+            raise UiError("no household is configured (WATTMAGENT_HOUSEHOLD_FILE)", 404)
+        ctx = self.provider.get()
+        self._last_fetched = ctx.fetched_at
+        now = self.clock()
+        key = (f"{day}|{now.replace(minute=0, second=0, microsecond=0).isoformat()}",
+               ctx.fetched_at.isoformat())  # fmt: skip
+        cached = self._view
+        if cached is not None and cached[0] == key:
+            return cached[1]
+        view: dict[str, Any] = json.loads(
+            json.dumps(build_day_view(self.household, ctx, now, day), default=str)
+        )
+        self._view = (key, view)
+        return view
+
+    def recent_decisions(self, limit: int = 20) -> list[dict[str, Any]]:
+        """The newest audit records, reduced to what the page shows. Empty if the audit log
+        cannot be read back."""
+        reader = getattr(self.audit, "recent", None)
+        if reader is None:
+            return []
+        entries = reader(min(max(limit, 1), MAX_DECISIONS))
+        return decision_rows([e for e in entries if isinstance(e, dict)])

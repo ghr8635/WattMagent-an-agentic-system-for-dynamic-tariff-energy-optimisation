@@ -96,3 +96,16 @@ curl -s -X POST localhost:8000/v1/plans -H "X-API-Key: $KEY" -H "Content-Type: a
 - **Limits of this version:** Base load is synthetic. With the `csv` source,
   prices come from a file whose modification time stands in for the fetch time, which
   re-converting an old export can fake; the `smard` source records the real fetch time.
+
+## Web page routes
+
+| Route | Key needed | Purpose |
+|---|---|---|
+| `GET /ui`, `/ui/app.js`, `/ui/style.css` | no | The page. It carries no data and no key. |
+| `GET /v1/ui/day?day=today\|tomorrow` | yes | The household's local day, planned: prices, schedule, planned energy per hour, cost, labels. 404 without a household or (for tomorrow) without published prices; 422 for another `day`. |
+| `GET /v1/ui/decisions?limit=20` | yes | Recent audit records, newest first, only a fixed set of fields (1-100 rows). |
+
+The data routes use the same key check and rate limit as the plan routes. The view is cached per
+day, hour and price fetch, so reloading the page does not solve again. Building a view writes no
+audit record: nothing is executed. `WATTMAGENT_UI_BANNER` sets a line shown at the top of the page
+(used to label demo data).

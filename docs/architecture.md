@@ -40,3 +40,8 @@
 - The battery wear cost is an assumption that changes the result a lot; see `docs/optimiser.md`.
 - Local time and daylight-saving days (23 h and 25 h) are handled in the household backtest
   and covered by tests.
+
+## Web page
+
+`api/ui_views.py` builds the day view (framework-free, tested without FastAPI); `PlanService.day_view`
+caches it; `api/app.py` adds three static routes and two key-protected data routes. See docs/web-ui.md.

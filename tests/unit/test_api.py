@@ -345,3 +345,73 @@ def test_two_workers_on_one_state_file_share_idempotency_and_plans(tmp_path: Pat
     assert second.headers["Idempotent-Replay"] == "true" and second.json() == first.json()
     assert len(audit.entries) == 1  # planned once, although two workers were asked
     assert state.exists()
+
+
+# --- the web page and its data routes ------------------------------------------------------------
+
+
+def house_service(tmp_path: Path, audit: InMemoryAuditLog | None = None) -> PlanService:
+    from wattmagent.appliances.household import load_household
+
+    svc = fresh_service(tmp_path, audit)
+    svc.household = load_household(
+        Path(__file__).resolve().parents[2] / "config" / "households" / "example_battery.toml"
+    )
+    return svc
+
+
+def test_the_page_is_served_without_a_key_with_a_strict_policy(tmp_path: Path) -> None:
+    c = client(fresh_service(tmp_path))
+    for path, kind in (
+        ("/ui", "text/html"),
+        ("/ui/app.js", "javascript"),
+        ("/ui/style.css", "text/css"),
+    ):
+        r = c.get(path)
+        assert r.status_code == 200 and kind in r.headers["content-type"], path
+        csp = r.headers["content-security-policy"]
+        assert "default-src 'none'" in csp and "script-src 'self'" in csp
+        assert "unsafe-inline" not in csp and "unsafe-eval" not in csp
+        assert "frame-ancestors 'none'" in csp and r.headers["x-content-type-options"] == "nosniff"
+
+
+def test_the_data_routes_need_a_key(tmp_path: Path) -> None:
+    c = client(house_service(tmp_path))
+    assert c.get("/v1/ui/day").status_code == 401
+    assert c.get("/v1/ui/decisions").status_code == 401
+    assert c.get("/v1/ui/day", headers={"X-API-Key": "wrong"}).status_code == 401
+
+
+def test_the_day_route_returns_the_view_and_the_banner(tmp_path: Path) -> None:
+    app = create_app(
+        Settings(api_keys=KEY, ui_banner="SYNTHETIC", _env_file=None),
+        service=house_service(tmp_path),
+    )
+    r = TestClient(app).get("/v1/ui/day", headers=AUTH)
+    assert r.status_code == 200
+    body = r.json()
+    assert (
+        body["decision"] == "optimised"
+        and body["banner"] == "SYNTHETIC"
+        and len(body["slots"]) == 24
+    )
+
+
+def test_the_day_route_refuses_what_it_cannot_show(tmp_path: Path) -> None:
+    c = client(house_service(tmp_path))
+    assert c.get("/v1/ui/day?day=yesterday", headers=AUTH).status_code == 422
+    assert client(fresh_service(tmp_path)).get("/v1/ui/day", headers=AUTH).status_code == 404
+
+
+def test_the_decisions_route_lists_recent_decisions_newest_first(tmp_path: Path) -> None:
+    c = client(house_service(tmp_path, InMemoryAuditLog()))
+    assert c.get("/v1/ui/decisions", headers=AUTH).json() == {"decisions": []}
+    c.post("/v1/plans", json={"text": "run the dishwasher by 10pm"}, headers=AUTH)
+    rows = c.get("/v1/ui/decisions?limit=5", headers=AUTH).json()["decisions"]
+    assert len(rows) == 1 and rows[0]["decision"] in ("optimised", "fallback")
+
+
+def test_the_data_routes_share_the_rate_limit(tmp_path: Path) -> None:
+    c = client(house_service(tmp_path), limiter=RateLimiter(2))
+    codes = [c.get("/v1/ui/decisions", headers=AUTH).status_code for _ in range(3)]
+    assert codes == [200, 200, 429]
