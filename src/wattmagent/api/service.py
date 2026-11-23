@@ -12,13 +12,19 @@ import threading
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
-from datetime import UTC, datetime, tzinfo
+from datetime import UTC, datetime, timedelta, tzinfo
 from pathlib import Path
 from typing import Any, Protocol
 
 from wattmagent.api.backends import PlanBackend
 from wattmagent.api.plans import PlanStore
-from wattmagent.api.ui_views import MAX_DECISIONS, UiError, build_day_view, decision_rows
+from wattmagent.api.ui_views import (
+    MAX_DECISIONS,
+    UiError,
+    build_day_view,
+    decision_rows,
+    local_day_slots,
+)
 from wattmagent.appliances.agent import run_appliance_agent
 from wattmagent.appliances.household import Household
 from wattmagent.appliances.request import mentions_appliance
@@ -30,6 +36,7 @@ from wattmagent.graph.agent import AgentResponse, run_replan
 from wattmagent.graph.context import window_start_for
 from wattmagent.graph.request import Completer
 from wattmagent.graph.validate import HORIZON_HOURS
+from wattmagent.integrations.ha_history import HistoryError
 from wattmagent.safety.audit import AuditLog
 from wattmagent.safety.freshness import PriceSnapshot, check_price_snapshot
 
@@ -123,6 +130,15 @@ class LiveContextProvider:
             return self._ctx
 
 
+class ConsumptionSource(Protocol):
+    """Measured energy per hour (kWh) for hours starting at the given instants; None if unknown."""
+
+    @property
+    def description(self) -> str: ...
+
+    def hourly_kwh(self, starts: list[datetime], now: datetime) -> list[float | None]: ...
+
+
 @dataclass(slots=True)
 class PlanService:
     provider: ContextProvider
@@ -132,6 +148,8 @@ class PlanService:
     clock: Callable[[], datetime] = lambda: datetime.now(UTC)
     store: PlanBackend = field(default_factory=PlanStore)
     household: Household | None = None  # enables appliance requests (WATTMAGENT_HOUSEHOLD_FILE)
+    consumption: ConsumptionSource | None = None  # measured use for the web page, if configured
+    _measured: tuple[str, dict[str, Any]] | None = field(default=None, init=False, repr=False)
     _last_fetched: datetime | None = field(default=None, init=False, repr=False)
     _view: tuple[tuple[str, str], dict[str, Any]] | None = field(
         default=None, init=False, repr=False
@@ -282,6 +300,40 @@ class PlanService:
         )
         self._view = (key, view)
         return view
+
+    def measured_day(self, day: str = "today") -> dict[str, Any]:
+        """Measured energy per hour for the same local day the page plans, where the meter knows.
+
+        Only hours that are over are filled; the rest are None. Cached for a minute, because the
+        answer comes from another system. Raises ``UiError`` where there is nothing to show.
+        """
+        if day not in ("today", "tomorrow"):
+            raise UiError("day must be 'today' or 'tomorrow'", 422)
+        if self.consumption is None:
+            raise UiError("measured consumption is not configured (see docs/web-ui.md)", 404)
+        ctx = self.provider.get()
+        now = self.clock()
+        local = now.astimezone(ctx.tz).date()
+        target = local if day == "today" else local + timedelta(days=1)
+        starts = local_day_slots(target, ctx.tz)
+        key = f"{day}|{target}|{int(now.timestamp() // 60)}"
+        cached = self._measured
+        if cached is not None and cached[0] == key:
+            return cached[1]
+        try:
+            kwh = self.consumption.hourly_kwh(starts, now)
+        except HistoryError as exc:
+            raise UiError(f"measured consumption could not be read: {exc}", 502) from exc
+        known = [v for v in kwh if v is not None]
+        out: dict[str, Any] = {
+            "date": target.isoformat(),
+            "source": self.consumption.description,
+            "kwh": kwh,
+            "hours_known": len(known),
+            "total_kwh": round(sum(known), 4),
+        }
+        self._measured = (key, out)
+        return out
 
     def recent_decisions(self, limit: int = 20) -> list[dict[str, Any]]:
         """The newest audit records, reduced to what the page shows. Empty if the audit log

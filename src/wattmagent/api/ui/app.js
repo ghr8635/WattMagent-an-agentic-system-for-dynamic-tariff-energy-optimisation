@@ -122,7 +122,7 @@
     });
   }
 
-  function drawEnergy(v) {
+  function drawEnergy(v, m) {
     var host = $("chart-energy"); clear(host);
     var s = v.series, n = v.slots.length;
     var cyc = v.slots.map(function (_, i) { return sum(Object.keys(s.cycles_kw).map(function (k) { return s.cycles_kw[k][i]; })); });
@@ -132,7 +132,7 @@
       { cls: "seg-batt", data: s.battery_charge_kw && s.battery_charge_kw.length ? s.battery_charge_kw : new Array(n).fill(0) }
     ];
     var totals = v.slots.map(function (_, i) { return sum(parts.map(function (p) { return p.data[i]; })); });
-    var W = 720, H = 220, x0 = 40, x1 = W - 8, y0 = 26, y1 = H - 24, bw = (x1 - x0) / n, hi = Math.max.apply(null, totals) * 1.1 || 1;
+    var W = 720, H = 220, x0 = 40, x1 = W - 8, y0 = 26, y1 = H - 24, bw = (x1 - x0) / n, measured = m ? m.kwh.filter(function (x) { return x !== null; }) : [], hi = Math.max.apply(null, totals.concat(measured)) * 1.1 || 1;
     function y(k) { return y1 - (k / hi) * (y1 - y0); }
     var svg = chartFrame(W, H); svg.setAttribute("aria-label", "Planned electricity use per hour in kW, stacked by source");
     for (var t = 0; t <= 4; t++) {
@@ -151,7 +151,19 @@
         acc += kw;
       });
     });
-    svg.appendChild(sv("text", { x: 4, y: 10, "class": "charttitle" }, "kW (planned)"));
+    if (m) {
+      var pts = [];
+      m.kwh.forEach(function (x, i) {
+        if (x === null) return;
+        var cx = x0 + i * bw + bw / 2, cy = y(x);
+        pts.push(cx.toFixed(1) + "," + cy.toFixed(1));
+        var d = sv("circle", { cx: cx, cy: cy, r: 3.5, "class": "meas-dot" });
+        d.appendChild(sv("title", {}, hhmm(v.slots[i].start) + "  measured " + x.toFixed(3) + " kWh"));
+        svg.appendChild(d);
+      });
+      if (pts.length > 1) svg.appendChild(sv("polyline", { points: pts.join(" "), "class": "meas-line" }));
+    }
+    svg.appendChild(sv("text", { x: 4, y: 10, "class": "charttitle" }, "kW (bars: planned, dots: measured)"));
     nowMarker(svg, v.slots, x0, bw, y0, y1);
     hourTicks(svg, v.slots, x0, bw, H - 8);
     host.appendChild(svg);
@@ -159,6 +171,7 @@
     [["l-base", "base load"], ["l-cycle", "appliance cycles"], ["l-tank", "hot water tank"], ["l-batt", "battery charging"]].forEach(function (p) {
       var d = el("span"); d.appendChild(el("i", p[0])); d.appendChild(document.createTextNode(p[1])); lg.appendChild(d);
     });
+    if (m) { var md = el("span"); md.appendChild(el("i", "l-meas")); md.appendChild(document.createTextNode("measured (" + m.source + ")")); lg.appendChild(md); }
   }
 
   function lineChart(hostId, label, unit, data, slots, cls) {
@@ -193,10 +206,10 @@
     v.labels.concat(["Cost basis: " + v.cost.basis + "."], v.left_out.length ? ["Not planned here: " + v.left_out.join(", ") + " (no verified weather)."] : [], v.reasons || []).forEach(function (t) { ul.appendChild(el("li", "", t)); });
   }
 
-  function render(v) {
+  function render(v, m) {
     var ban = $("banner");
     ban.hidden = !v.banner; ban.textContent = v.banner || "";
-    drawSummary(v); drawPrice(v); drawTimeline(v); drawEnergy(v);
+    drawSummary(v); drawPrice(v); drawTimeline(v); drawEnergy(v, m);
     var hasStore = v.series.battery_stored_kwh.length > 0 || v.series.tank_temp_c.length > 0;
     $("storage-card").hidden = !hasStore;
     lineChart("chart-battery", "Battery stored energy", "kWh", v.series.battery_stored_kwh, v.slots, "");
@@ -215,12 +228,34 @@
     });
   }
 
+  function measuredNote(m, v, problem) {
+    var n = $("measured-note");
+    if (problem) { n.textContent = problem; return; }
+    var planned = 0;
+    v.slots.forEach(function (s, i) {
+      if (m.kwh[i] === null) return;
+      planned += v.series.base_kw[i] + sum(Object.keys(v.series.cycles_kw).map(function (k) { return v.series.cycles_kw[k][i]; })) +
+        ((v.series.tank_kw || [])[i] || 0) + ((v.series.battery_charge_kw || [])[i] || 0);
+    });
+    n.textContent = "Measured: " + m.total_kwh.toFixed(2) + " kWh over " + m.hours_known + " finished hours with a reading; the plan for those same hours is " +
+      planned.toFixed(2) + " kWh. The two are not expected to match: the plan uses a fixed base-load profile and assumed appliances, and the meter may cover more or less than the plan.";
+  }
+
+  async function loadMeasured() {
+    try { return { m: await call("/v1/ui/consumption?day=" + day), problem: "" }; }
+    catch (e) {
+      if (e.status === 404) return { m: null, problem: "Measured consumption is not connected (see docs/web-ui.md)." };
+      return { m: null, problem: e.message };
+    }
+  }
+
   async function load() {
     if (!apiKey) return;
     setStatus("Loading ...", false);
     try {
-      var results = await Promise.all([call("/v1/ui/day?day=" + day), call("/v1/ui/decisions?limit=20")]);
-      render(results[0]); drawDecisions(results[1].decisions);
+      var results = await Promise.all([call("/v1/ui/day?day=" + day), call("/v1/ui/decisions?limit=20"), loadMeasured()]);
+      render(results[0], results[2].m); drawDecisions(results[1].decisions);
+      measuredNote(results[2].m, results[0], results[2].problem);
       setStatus("Plan for " + results[0].date + " (" + results[0].day + "), made " + results[0].generated_at.slice(11, 16) + " UTC.", false);
     } catch (e) {
       setStatus(e.message, true);

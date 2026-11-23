@@ -198,7 +198,7 @@ def build_day_view(
         },
         "left_out": excluded,
         "labels": [
-            "Planned, not measured: there is no meter data in this system.",
+            "Planned, not measured: the plan comes from the optimiser and a simulation.",
             "The day is planned from its start; hours already past are shown as planned.",
             "Appliance figures are assumptions from the catalogue and household file.",
             ctx.price_basis[0].upper() + ctx.price_basis[1:] + ".",

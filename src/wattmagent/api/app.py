@@ -31,6 +31,7 @@ from wattmagent.api.plans import PlanStore
 from wattmagent.api.ratelimit import RateLimiter
 from wattmagent.api.security import KeyRing
 from wattmagent.api.service import (
+    ConsumptionSource,
     ContextProvider,
     CsvContextProvider,
     LiveContextProvider,
@@ -99,7 +100,22 @@ def service_from_settings(settings: Settings) -> PlanService:
         from wattmagent.api.sqlite_state import SqlitePlanStore
 
         plans = SqlitePlanStore(settings.state_file, settings.plan_ttl_s)
-    return PlanService(provider, audit=audit, llm=llm, store=plans, household=household)
+    consumption: ConsumptionSource | None = None
+    if settings.ha_url or settings.ha_energy_entity:
+        from wattmagent.integrations.ha_history import HomeAssistantHistory
+
+        token = settings.ha_token.get_secret_value()
+        try:
+            consumption = HomeAssistantHistory(
+                settings.ha_url, token, settings.ha_energy_entity, settings.ha_energy_unit
+            )
+        except ValueError as exc:
+            raise RuntimeError(
+                f"the Home Assistant history settings cannot be used: {exc}"
+            ) from exc
+    return PlanService(
+        provider, audit=audit, llm=llm, store=plans, household=household, consumption=consumption
+    )
 
 
 UI_HEADERS = {
@@ -329,6 +345,15 @@ def create_app(
     def ui_day(who: Annotated[str, Depends(require_key)], day: str = "today") -> JSONResponse:
         try:
             return JSONResponse({**svc.day_view(day), "banner": cfg.ui_banner})
+        except UiError as exc:
+            raise HTTPException(exc.status_code, str(exc)) from exc
+
+    @app.get("/v1/ui/consumption")
+    def ui_consumption(
+        who: Annotated[str, Depends(require_key)], day: str = "today"
+    ) -> JSONResponse:
+        try:
+            return JSONResponse(svc.measured_day(day))
         except UiError as exc:
             raise HTTPException(exc.status_code, str(exc)) from exc
 
