@@ -103,6 +103,7 @@ curl -s -X POST localhost:8000/v1/plans -H "X-API-Key: $KEY" -H "Content-Type: a
 |---|---|---|
 | `GET /ui`, `/ui/app.js`, `/ui/style.css` | no | The page. It carries no data and no key. |
 | `GET /v1/ui/day?day=today\|tomorrow` | yes | The household's local day, planned: prices, schedule, planned energy per hour, cost, labels. 404 without a household or (for tomorrow) without published prices; 422 for another `day`. |
+| `GET /v1/ui/consumption?day=today\|tomorrow` | yes | Measured energy per hour (kWh) from Home Assistant history for the same local day; `null` for hours that are not over or have no reading. 404 if not configured, 502 if Home Assistant cannot be read. |
 | `GET /v1/ui/decisions?limit=20` | yes | Recent audit records, newest first, only a fixed set of fields (1-100 rows). |
 
 The data routes use the same key check and rate limit as the plan routes. The view is cached per

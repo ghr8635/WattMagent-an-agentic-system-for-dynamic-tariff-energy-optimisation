@@ -13,8 +13,8 @@ no framework, build step, CDN or web font.
 - **Price chart:** wholesale day-ahead price per hour; hours in which the plan uses energy are
   shaded; hours already past are faded and a dashed line marks "now".
 - **Timeline:** one row per appliance, the hot water tank and the battery.
-- **Energy by hour:** planned consumption, stacked. **Planned, not measured**: this system has no
-  meter data. Real consumption would need Home Assistant history or a meter, which is not built.
+- **Energy by hour:** planned consumption, stacked bars. **Planned, not measured.** With Home
+  Assistant history connected (below), measured hourly energy is drawn as dots over the bars.
 - **Battery and tank:** simulated stored energy and tank temperature.
 - **Recent decisions:** from the audit log (time, kind, decision, verifier result, cost, reasons).
 
@@ -52,3 +52,27 @@ Checked: view-model and route tests, asset rules (CI), and a render in headless 
 
 Not checked: other browsers, a screen reader beyond the labels in the markup, a real host, real
 prices or live data, many concurrent users.
+
+## Measured consumption (optional)
+
+Set three variables and the page reads measured energy from Home Assistant history:
+
+```bash
+export WATTMAGENT_HA_URL=http://homeassistant.local:8123
+export WATTMAGENT_HA_TOKEN=<a long-lived access token>
+export WATTMAGENT_HA_ENERGY_ENTITY=sensor.grid_import_energy   # cumulative, only counts up
+export WATTMAGENT_HA_ENERGY_UNIT=kWh                           # or Wh
+```
+
+- **Read-only.** One `GET /api/history/period/...` for one `sensor.*` entity. It calls no service
+  and writes nothing. A test checks the module never mentions services or states endpoints or POST.
+- **No guessing.** An hour is shown only when the meter had a reading at or before both its start
+  and its end and did not go backwards. A gap, `unavailable`, a reset or an hour not over yet is
+  left empty, not estimated.
+- **What the sensor measures decides what the dots mean.** A grid-import meter is comparable to
+  the plan's grid bill; a whole-house meter is not (it counts solar self-use). The page does not
+  know which you chose. Do not read a gap between dots and bars as an optimiser error.
+- The token is read from the environment, never shown, and redirects are not followed. The answer
+  is cached for a minute. If Home Assistant cannot be reached the page says so and keeps the plan.
+- **Unverified:** the layout of the history reply is written from Home Assistant's documentation and
+  tested against a fake server; it has not run against a real instance.

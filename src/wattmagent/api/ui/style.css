@@ -86,3 +86,6 @@ th { color: var(--muted); font-weight: 600; }
 .line.tank { stroke: var(--c-tank); }
 .nowline { stroke: var(--bad); stroke-width: 1.5; stroke-dasharray: 4 3; }
 .charttitle { fill: var(--muted); font: 12px var(--font); }
+.meas-dot { fill: var(--bad); stroke: var(--card); stroke-width: 1; }
+.meas-line { fill: none; stroke: var(--bad); stroke-width: 1.5; }
+.legend .l-meas { background: var(--bad); border-radius: 50%; }

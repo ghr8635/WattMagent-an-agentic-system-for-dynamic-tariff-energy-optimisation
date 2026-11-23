@@ -43,6 +43,12 @@ class Settings(BaseSettings):
     state_file: Path | None = None
     # a line shown at the top of the web page, e.g. to label a demo as synthetic
     ui_banner: str = ""
+    # measured consumption for the web page, read from Home Assistant history (read-only).
+    # ha_energy_entity is a cumulative energy sensor, e.g. sensor.grid_import_energy.
+    ha_url: str = ""
+    ha_token: SecretStr = SecretStr("")
+    ha_energy_entity: str = ""
+    ha_energy_unit: str = "kWh"  # kWh or Wh
 
     @property
     def model_chain(self) -> list[str]:

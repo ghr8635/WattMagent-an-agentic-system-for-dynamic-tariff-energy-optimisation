@@ -92,3 +92,9 @@ automation:
 - Automatic control (switching devices on the plan) is deliberately not built. It would need an
   opt-in, per-device limits, a kill switch and weeks of advice mode to compare plans with what
   people actually did.
+
+## Reading measured consumption (history, read-only)
+
+Separate from advice mode: the API can read one cumulative energy sensor from Home Assistant
+history to show measured use on the web page. It only issues `GET /api/history/period/...`; see
+docs/web-ui.md. Unverified against a real instance.

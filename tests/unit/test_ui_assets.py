@@ -57,4 +57,4 @@ def test_the_script_sets_no_inline_style_through_attributes() -> None:
 
 def test_the_page_names_the_limits_of_its_numbers() -> None:
     html = read("index.html")
-    assert "planned, not measured" in html and "wholesale only" in html
+    assert "bars planned" in html and "wholesale only" in html and "not from a meter" in html

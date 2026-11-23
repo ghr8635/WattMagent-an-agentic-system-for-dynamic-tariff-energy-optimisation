@@ -415,3 +415,26 @@ def test_the_data_routes_share_the_rate_limit(tmp_path: Path) -> None:
     c = client(house_service(tmp_path), limiter=RateLimiter(2))
     codes = [c.get("/v1/ui/decisions", headers=AUTH).status_code for _ in range(3)]
     assert codes == [200, 200, 429]
+
+
+def test_the_consumption_route_needs_a_key_and_says_when_it_is_not_connected(
+    tmp_path: Path,
+) -> None:
+    c = client(fresh_service(tmp_path))
+    assert c.get("/v1/ui/consumption").status_code == 401
+    r = c.get("/v1/ui/consumption", headers=AUTH)
+    assert r.status_code == 404 and "not configured" in r.json()["detail"]
+
+
+def test_the_consumption_route_returns_measured_hours_or_a_clean_502(tmp_path: Path) -> None:
+    from tests.unit.test_ha_history import FakeMeter
+
+    svc = fresh_service(tmp_path)
+    svc.consumption = FakeMeter()
+    body = client(svc).get("/v1/ui/consumption", headers=AUTH).json()
+    assert body["hours_known"] == 18 and body["source"] == "fake meter"
+    svc.consumption = FakeMeter(fail=True)
+    svc._measured = None
+    r = client(svc).get("/v1/ui/consumption", headers=AUTH)
+    assert r.status_code == 502 and "could not be read" in r.json()["detail"]
+    assert client(svc).get("/v1/ui/consumption?day=x", headers=AUTH).status_code == 422

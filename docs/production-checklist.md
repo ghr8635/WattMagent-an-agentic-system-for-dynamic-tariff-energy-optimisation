@@ -68,6 +68,7 @@ real customers or devices.
 
 - [x] Served by the API, strict CSP, key in memory only, data routes behind key and rate limit.
 - [ ] Checked on a real host behind TLS, with real prices.
-- [ ] Real consumption (Home Assistant history or a meter); the energy view is planned only.
+- [x] Measured consumption overlay from Home Assistant history (fake-server tested).
+- [ ] Measured consumption checked against a real Home Assistant and a real meter sensor.
 - [ ] Heat pump and solar in the page's plan (needs a verified weather forecast).
 - [ ] Cross-browser and screen-reader check.
