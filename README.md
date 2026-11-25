@@ -65,6 +65,7 @@ schedule, checks that schedule independently, and explains it in a few sentences
 | Real forecasts (weather service, load, price publication) | not started; the sun forecast used so far is built from past observations, prices are assumed known, load and temperature are not forecast |
 | Web page served by the API (chat, plan timeline, price chart, planned energy by hour, decision log; light and dark) | done; plain HTML/CSS/JS, strict CSP, key held in browser memory only; data routes sit behind the same key and rate limit; checked in headless Chrome here, **not on a real host or with real data**; shows *planned* energy; measured use can be overlaid from Home Assistant history (next row) (`docs/web-ui.md`) |
 | Measured consumption on the page: read-only Home Assistant history client, hourly energy from a cumulative meter sensor, dots over the planned bars | done, tested against a local fake server only; **never run against a real Home Assistant** (the history reply layout is written from its documentation); off unless `WATTMAGENT_HA_URL`, `WATTMAGENT_HA_TOKEN` and `WATTMAGENT_HA_ENERGY_ENTITY` are set; no data is stored, an hour is shown only when the meter had readings at both edges |
+| Scheduled advice publisher: plans at set local times and hands the advice to Home Assistant (config file, state file, kill switch, retries, daily cap, no overwriting valid advice with a worse one) | done; dry run by default, advice only; tested with fakes and a dry-run smoke test against a local API; **not run unattended for days or against a real Home Assistant**; example systemd unit unverified (`docs/home-assistant.md`) |
 | Deployment to a host, rollback, load and failure tests, runbook | `deploy/deploy.sh` is written but untested; the rest not started |
 
 No household savings figure is claimed. See "Results" below and `docs/results.md`.
@@ -191,6 +192,10 @@ Weather data: [Open-Meteo.com](https://open-meteo.com), licensed CC BY 4.0.
 - Every number in this README comes from a script in this repository.
 - External calls sit behind interfaces; unit tests use fakes and need no network.
 - Simulated and synthetic results are always labelled as such.
+
+## Scheduled publishing
+
+`python -m wattmagent.integrations.publisher` plans at the local times you set (for example shortly after the day-ahead prices come out) and publishes the advice to Home Assistant. It is a dry run unless the config says `publish = true`, it publishes advice only (no service call), it has a kill switch (a stop file), runs each slot once, retries briefly, has a daily cap and never replaces a still-valid advice with a fallback. See `docs/home-assistant.md` and `config/publisher.example.toml`. Not run unattended for days or on a real instance yet.
 
 ## Web page
 

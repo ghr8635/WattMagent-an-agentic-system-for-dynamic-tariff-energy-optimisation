@@ -98,3 +98,36 @@ automation:
 Separate from advice mode: the API can read one cumulative energy sensor from Home Assistant
 history to show measured use on the web page. It only issues `GET /api/history/period/...`; see
 docs/web-ui.md. Unverified against a real instance.
+
+## Scheduled publishing
+
+`python -m wattmagent.integrations.publisher` runs the same advice publisher on a schedule, so a
+person does not have to start it. Copy `config/publisher.example.toml`, set the request texts and the
+local times (day-ahead prices for tomorrow come out in the early afternoon, so plan shortly after),
+then:
+
+```powershell
+python -m wattmagent.integrations.publisher --config config/publisher.toml --check   # validate, print schedule
+$env:WATTMAGENT_ADVICE_API_KEY = "<one of the API keys>"
+python -m wattmagent.integrations.publisher --config config/publisher.toml --once    # what is due now
+python -m wattmagent.integrations.publisher --config config/publisher.toml           # keep running
+```
+
+It is a **dry run unless the config says `publish = true`** (plans, logs, sends nothing). Rules, each
+tested:
+
+- **Kill switch:** while the stop file exists (default `.state/publisher.stop`) nothing is planned or
+  sent, and a slot that passes meanwhile is missed, not made up.
+- **Each slot runs once.** A state file remembers finished slots, so a restart never repeats one. A
+  failed slot is retried up to 3 times, a minute apart, only inside its grace period (default 30
+  min); an older slot is dropped, never run late.
+- **A valid advice is not overwritten by a worse one:** `fallback` and `no_plan` are sent only when the
+  advice already in Home Assistant has expired; `ready` is always sent.
+- **Daily cap** on real publishes (default 12). Dry runs are not counted.
+- The planning request carries an `Idempotency-Key` made from the slot, so a retry after a lost
+  answer does not plan twice.
+- Secrets come from the environment only and are never logged. Advice only: no service call.
+
+`deploy/systemd/wattmagent-publisher.service` is an example unit (unverified on a real host).
+Verified here: the logic, against fakes, and a dry-run smoke test against a local API. Not verified:
+running unattended for days, a real Home Assistant, the systemd unit.

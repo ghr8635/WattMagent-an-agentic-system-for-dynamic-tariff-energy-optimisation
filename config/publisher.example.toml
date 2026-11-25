@@ -1,0 +1,17 @@
+# Scheduled advice publisher. Times are local clock times in `timezone`.
+# Day-ahead prices for tomorrow are normally published in the early afternoon (around 13:00 to
+# 14:00 Berlin time), so plan shortly after, and again in the evening and morning.
+timezone = "Europe/Berlin"
+publish = false              # false: plan and log only (dry run). true: really send to Home Assistant.
+grace_minutes = 30           # a slot that is missed by more than this is dropped, never run late
+max_publishes_per_day = 12   # real publishes only
+
+[[job]]
+name = "dishwasher-evening"
+text = "run the dishwasher between 7pm and midnight"
+at = ["14:10", "18:30"]
+
+[[job]]
+name = "washing-day"
+text = "run the washing machine before 6pm"
+at = ["06:30"]

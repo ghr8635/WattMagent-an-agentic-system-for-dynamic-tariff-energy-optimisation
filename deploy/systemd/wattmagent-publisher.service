@@ -1,0 +1,30 @@
+# Example systemd unit for the scheduled advice publisher. UNVERIFIED on a real host: read it,
+# adjust the paths and user, and try it with publish = false (the default) first.
+#
+#   sudo cp deploy/systemd/wattmagent-publisher.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now wattmagent-publisher
+#   journalctl -u wattmagent-publisher -f
+# Kill switch:  touch /var/lib/wattmagent/publisher.stop     (remove the file to resume)
+[Unit]
+Description=WattMagent scheduled advice publisher
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=wattmagent
+WorkingDirectory=/opt/wattmagent
+# one file with WATTMAGENT_ADVICE_API_KEY, WATTMAGENT_HA_URL, WATTMAGENT_HA_TOKEN (chmod 600)
+EnvironmentFile=/etc/wattmagent/publisher.env
+ExecStart=/opt/wattmagent/.venv/bin/python -m wattmagent.integrations.publisher \
+  --config /etc/wattmagent/publisher.toml \
+  --state /var/lib/wattmagent/publisher.json \
+  --stop-file /var/lib/wattmagent/publisher.stop
+Restart=on-failure
+RestartSec=30
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/wattmagent
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
