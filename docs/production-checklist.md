@@ -72,3 +72,11 @@ real customers or devices.
 - [ ] Measured consumption checked against a real Home Assistant and a real meter sensor.
 - [ ] Heat pump and solar in the page's plan (needs a verified weather forecast).
 - [ ] Cross-browser and screen-reader check.
+
+## Scheduled publisher
+
+- [x] Dry run by default, kill switch, one run per slot, retries inside a grace period, daily cap.
+- [ ] Run in dry run for several days on the real host and read the log.
+- [ ] Publish to a real Home Assistant and confirm an automation sees the sensor and the event.
+- [ ] Check the systemd unit on a real host (restart, file permissions, journal output).
+- [ ] Decide who watches the log and what an alert for "failed" slots looks like.
